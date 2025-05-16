@@ -81,7 +81,7 @@ def connect_spectrometer():
 
     return spec_handle, wavelengths, num_pixels, serial_str
 
-def prepare_measurement(spec_handle, num_pixels, integration_time_ms=50.0, averages=1):
+def prepare_measurement(spec_handle, num_pixels, integration_time_ms=50.0, averages=1, cycles=1, repetitions=1):
     meas_cfg = MeasConfigType()
     meas_cfg.m_StartPixel = 0
     meas_cfg.m_StopPixel = num_pixels - 1
@@ -101,6 +101,8 @@ def prepare_measurement(spec_handle, num_pixels, integration_time_ms=50.0, avera
     meas_cfg.m_Control_m_LaserWidth = 0
     meas_cfg.m_Control_m_LaserWaveLength = 0.0
     meas_cfg.m_Control_m_StoreToRam = 0
+    meas_cfg.m_Control_m_Cycles = cycles
+    meas_cfg.m_Control_m_Repetitions = repetitions
     return AVS_PrepareMeasure(spec_handle, meas_cfg)
 
 def start_measurement(spec_handle, callback_func, num_scans=-1):

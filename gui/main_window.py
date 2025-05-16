@@ -7,7 +7,7 @@ import cv2
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QGridLayout, QSplitter,
     QLabel, QPushButton, QStatusBar, QMessageBox, QHBoxLayout, QGroupBox,
-    QApplication
+    QApplication, QComboBox, QFileDialog, QSpinBox, QDoubleSpinBox, QLineEdit
 )
 from PyQt5.QtCore import QTimer, Qt, QDateTime
 from PyQt5.QtGui import QImage, QPixmap
@@ -288,16 +288,32 @@ class MainWindow(QMainWindow):
         self.camera_timer.timeout.connect(self.update_camera_feed)
         self.camera_timer.start(100)  # Update at 10fps instead of 30fps
         
-        # Second section - Routine File Upload
-        self.routine_group = QGroupBox("Routine Automation")
+        # Second section - Routine Code
+        self.routine_group = QGroupBox("Routine Code")
         self.routine_group.setObjectName("routineGroup")
         routine_layout = QVBoxLayout(self.routine_group)
+
+        # Add dropdown for preset routine code
+        preset_layout = QHBoxLayout()
+        preset_label = QLabel("Routine Code:")
+        preset_label.setStyleSheet("font-weight: bold;")
+        preset_layout.addWidget(preset_label)
+
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItems(["Select Code", "SO", "FU", "RE"])
+        self.preset_combo.setCurrentIndex(0)
+        self.preset_combo.currentIndexChanged.connect(self.load_preset_schedule)
+        preset_layout.addWidget(self.preset_combo)
+        routine_layout.addLayout(preset_layout)
+
+        # Custom routine code file loading
         routine_btn_layout = QHBoxLayout()
-        self.load_routine_btn = QPushButton("Load Routine File")
+        self.load_routine_btn = QPushButton("Load Custom Code")
         self.load_routine_btn.setStyleSheet("font-weight: bold; font-size: 11pt;")
         self.load_routine_btn.clicked.connect(self.load_routine_file)
         routine_btn_layout.addWidget(self.load_routine_btn)
-        self.run_routine_btn = QPushButton("Run Routine")
+
+        self.run_routine_btn = QPushButton("Run Code")
         self.run_routine_btn.setStyleSheet("font-weight: bold; font-size: 11pt;")
         self.run_routine_btn.setEnabled(False)
         self.run_routine_btn.clicked.connect(self.run_routine)
@@ -689,7 +705,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def load_routine_file(self):
-        """Load a routine file for automated hardware control"""
+        """Load a custom routine code file for automated hardware control"""
         from PyQt5.QtWidgets import QFileDialog
         
         file_path, _ = QFileDialog.getOpenFileName(
@@ -710,6 +726,8 @@ class MainWindow(QMainWindow):
             if self.routine_commands:
                 self.routine_status.setText(f"Loaded: {os.path.basename(file_path)}\n{len(self.routine_commands)} commands")
                 self.run_routine_btn.setEnabled(True)
+                # Reset preset dropdown to avoid confusion
+                self.preset_combo.setCurrentIndex(0)
             else:
                 self.routine_status.setText("No valid commands in file")
                 self.run_routine_btn.setEnabled(False)
@@ -720,7 +738,7 @@ class MainWindow(QMainWindow):
             self.run_routine_btn.setEnabled(False)
 
     def run_routine(self):
-        """Execute the loaded routine commands"""
+        """Execute the loaded routine code commands"""
         if not hasattr(self, 'routine_commands') or not self.routine_commands:
             self.statusBar().showMessage("No routine loaded")
             return
@@ -736,16 +754,21 @@ class MainWindow(QMainWindow):
         self.routine_timer.start(1000)  # Start with 1 second interval
 
     def execute_next_routine_command(self):
-        """Execute the next command in the routine"""
+        """Execute the next command in the schedule sequence"""
         if self.routine_index >= len(self.routine_commands):
+            # All commands completed
             self.routine_timer.stop()
-            self.routine_status.setText("Routine completed")
+            self.routine_status.setText("Schedule execution completed")
             self.run_routine_btn.setEnabled(True)
-            self.statusBar().showMessage("Routine execution completed")
+            self.statusBar().showMessage("Schedule execution completed")
             return
         
+        # Get the current command
         command = self.routine_commands[self.routine_index]
-        self.routine_status.setText(f"Running: {command}")
+        self.routine_index += 1
+        
+        # Update status
+        self.routine_status.setText(f"Running: {command}\nCommand {self.routine_index} of {len(self.routine_commands)}")
         
         try:
             # Parse and execute the command
@@ -772,21 +795,41 @@ class MainWindow(QMainWindow):
             elif parts[0].lower() == "wait":
                 # Example: wait 5000 (wait for 5 seconds)
                 if len(parts) >= 2:
-                    # Adjust timer interval for this step
-                    wait_ms = int(parts[1])
-                    self.routine_timer.setInterval(wait_ms)
+                    try:
+                        wait_ms = int(parts[1])
+                        # Adjust timer interval for this wait
+                        self.routine_timer.setInterval(wait_ms)
+                        # Return without scheduling next command
+                        return
+                    except ValueError:
+                        self.statusBar().showMessage(f"Invalid wait time: {parts[1]}")
             elif parts[0].lower() == "log":
                 # Example: log This is a message
-                message = " ".join(parts[1:])
-                self.handle_status_message(message)
-        
-            self.routine_index += 1
+                if len(parts) >= 2:
+                    message = " ".join(parts[1:])
+                    self.statusBar().showMessage(message)
+                    # Also log to file if logging is enabled
+                    if hasattr(self, 'log_file') and self.log_file:
+                        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                        self.log_file.write(f"{timestamp} - {message}\n")
+                        self.log_file.flush()
+            elif parts[0].lower() == "temp":
+                # Example: temp setpoint 25.5
+                if len(parts) >= 3 and parts[1].lower() == "setpoint":
+                    try:
+                        setpoint = float(parts[2])
+                        if hasattr(self, 'temp_ctrl'):
+                            self.temp_ctrl.set_setpoint(setpoint)
+                    except ValueError:
+                        self.statusBar().showMessage(f"Invalid temperature: {parts[2]}")
+            else:
+                self.statusBar().showMessage(f"Unknown command: {command}")
         
         except Exception as e:
-            self.statusBar().showMessage(f"Error in routine: {e}")
-            self.routine_status.setText(f"Error: {str(e)}")
-            self.routine_timer.stop()
-            self.run_routine_btn.setEnabled(True)
+            self.statusBar().showMessage(f"Error executing command: {e}")
+        
+        # Reset timer interval to default for next command
+        self.routine_timer.setInterval(100)
 
     def update_camera_feed(self):
         """Update the camera feed display with optimized performance and error handling"""
@@ -1024,4 +1067,118 @@ class MainWindow(QMainWindow):
                 'latitude': 0,
                 'longitude': 0
             }
+
+    def load_preset_schedule(self, index):
+        """Load a preset schedule based on dropdown selection"""
+        if index == 0:  # "Select Preset"
+            return
+        
+        preset_name = self.preset_combo.currentText()
+        
+        # Define the paths for preset schedule files
+        schedules_dir = os.path.join(os.path.dirname(__file__), "..", "schedules")
+        os.makedirs(schedules_dir, exist_ok=True)
+        
+        preset_files = {
+            "SO": os.path.join(schedules_dir, "schedule_so.txt"),
+            "FU": os.path.join(schedules_dir, "schedule_fu.txt"),
+            "RE": os.path.join(schedules_dir, "schedule_re.txt")
+        }
+        
+        file_path = preset_files.get(preset_name)
+        
+        if not file_path or not os.path.exists(file_path):
+            # Create the preset file if it doesn't exist
+            self._create_preset_schedule_file(preset_name, file_path)
+        
+        try:
+            with open(file_path, 'r') as f:
+                self.routine_commands = f.readlines()
+            
+            # Remove comments and empty lines
+            self.routine_commands = [line.strip() for line in self.routine_commands 
+                                    if line.strip() and not line.strip().startswith('#')]
+            
+            if self.routine_commands:
+                self.routine_status.setText(f"Loaded: {preset_name} Schedule\n{len(self.routine_commands)} commands")
+                self.run_routine_btn.setEnabled(True)
+            else:
+                self.routine_status.setText("No valid commands in preset file")
+                self.run_routine_btn.setEnabled(False)
+                
+        except Exception as e:
+            self.statusBar().showMessage(f"Error loading preset schedule: {e}")
+            self.routine_status.setText(f"Error: {str(e)}")
+            self.run_routine_btn.setEnabled(False)
+
+    def _create_preset_schedule_file(self, preset_name, file_path):
+        """Create a preset schedule file with default commands"""
+        try:
+            with open(file_path, 'w') as f:
+                f.write(f"# {preset_name} Schedule - Created {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                if preset_name == "SO":
+                    # Solar Observation Schedule
+                    f.write("# Solar Observation Schedule\n")
+                    f.write("log Starting Solar Observation Schedule\n")
+                    f.write("motor move 0\n")
+                    f.write("wait 2000\n")
+                    f.write("filter position 1\n")
+                    f.write("wait 1000\n")
+                    f.write("spectrometer start\n")
+                    f.write("wait 5000\n")
+                    f.write("log Saving solar spectrum data\n")
+                    f.write("spectrometer save\n")
+                    f.write("wait 1000\n")
+                    f.write("motor move 45\n")
+                    f.write("wait 2000\n")
+                    f.write("spectrometer save\n")
+                    f.write("wait 1000\n")
+                    f.write("log Solar Observation Schedule completed\n")
+                
+                elif preset_name == "FU":
+                    # Full Spectrum Schedule
+                    f.write("# Full Spectrum Schedule\n")
+                    f.write("log Starting Full Spectrum Schedule\n")
+                    f.write("motor move 90\n")
+                    f.write("wait 2000\n")
+                    f.write("filter position 2\n")
+                    f.write("wait 1000\n")
+                    f.write("spectrometer start\n")
+                    f.write("wait 3000\n")
+                    f.write("log Saving full spectrum data\n")
+                    f.write("spectrometer save\n")
+                    f.write("wait 1000\n")
+                    f.write("filter position 3\n")
+                    f.write("wait 1000\n")
+                    f.write("spectrometer save\n")
+                    f.write("wait 1000\n")
+                    f.write("log Full Spectrum Schedule completed\n")
+                
+                elif preset_name == "RE":
+                    # Reference Measurement Schedule
+                    f.write("# Reference Measurement Schedule\n")
+                    f.write("log Starting Reference Measurement Schedule\n")
+                    f.write("motor move 180\n")
+                    f.write("wait 2000\n")
+                    f.write("filter position 1\n")
+                    f.write("wait 1000\n")
+                    f.write("spectrometer start\n")
+                    f.write("wait 2000\n")
+                    f.write("log Saving reference data\n")
+                    f.write("spectrometer save\n")
+                    f.write("wait 1000\n")
+                    f.write("log Reference Measurement Schedule completed\n")
+            
+            self.statusBar().showMessage(f"Created preset schedule file: {preset_name}")
+        
+        except Exception as e:
+            self.statusBar().showMessage(f"Error creating preset schedule file: {e}")
+
+
+
+
+
+
+
 

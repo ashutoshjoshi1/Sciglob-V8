@@ -72,11 +72,34 @@ class SpectrometerController(QObject):
         self.apply_btn.clicked.connect(self.update_measurement_settings)
         integ_layout.addWidget(self.apply_btn)
 
-        # Auto-adjust checkbox
-        self.auto_adjust_cb = QCheckBox("Auto-adjust Integration Time")
-        self.auto_adjust_cb.setChecked(True)  # Enable by default
-        integ_layout.addWidget(self.auto_adjust_cb)
+        # Removed auto-adjust checkbox
+
         main_layout.addLayout(integ_layout)
+
+        # Cycles and repetitions controls with bold labels
+        cycles_layout = QHBoxLayout()
+
+        cycles_label = QLabel("Cycles:")
+        cycles_label.setStyleSheet("font-weight: bold;")
+        cycles_layout.addWidget(cycles_label)
+
+        self.cycles_spinbox = QSpinBox()
+        self.cycles_spinbox.setRange(1, 100)  # 1 to 100 cycles
+        self.cycles_spinbox.setValue(1)  # Default 1 cycle
+        self.cycles_spinbox.setSingleStep(1)
+        cycles_layout.addWidget(self.cycles_spinbox)
+
+        repetitions_label = QLabel("Repetitions:")
+        repetitions_label.setStyleSheet("font-weight: bold;")
+        cycles_layout.addWidget(repetitions_label)
+
+        self.repetitions_spinbox = QSpinBox()
+        self.repetitions_spinbox.setRange(1, 100)  # 1 to 100 repetitions
+        self.repetitions_spinbox.setValue(1)  # Default 1 repetition
+        self.repetitions_spinbox.setSingleStep(1)
+        cycles_layout.addWidget(self.repetitions_spinbox)
+
+        main_layout.addLayout(cycles_layout)
 
         # Spectral plots in tabs
         pg.setConfigOption('background', '#252525')
@@ -178,6 +201,10 @@ class SpectrometerController(QObject):
         # Get integration time from UI
         integration_time = float(self.integ_spinbox.value())
         
+        # Get cycles and repetitions from UI
+        cycles = self.cycles_spinbox.value()
+        repetitions = self.repetitions_spinbox.value()
+        
         # Calculate averages based on integration time
         # For shorter integration times, use more averages to improve signal quality
         # For longer integration times, use fewer averages to maintain responsiveness
@@ -194,11 +221,13 @@ class SpectrometerController(QObject):
         self.current_integration_time_us = integration_time
         
         # Update status with current settings
-        self.status_signal.emit(f"Starting measurement (Int: {integration_time}ms, Avg: {averages})")
+        self.status_signal.emit(f"Starting measurement (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
         
         code = prepare_measurement(self.handle, self.npix, 
                                   integration_time_ms=integration_time, 
-                                  averages=averages)
+                                  averages=averages,
+                                  cycles=cycles,
+                                  repetitions=repetitions)
         if code != 0:
             self.status_signal.emit(f"Prepare error: {code}")
             return
@@ -288,15 +317,7 @@ class SpectrometerController(QObject):
                     max_y = np.max(intensities) * 1.1
                     self.plot_px.setYRange(0, max_y)
             
-            # Auto-adjust integration time based on peak value if enabled
-            if hasattr(self, 'auto_adjust_cb') and self.auto_adjust_cb.isChecked():
-                if not hasattr(self, '_auto_adjust_counter'):
-                    self._auto_adjust_counter = 0
-                
-                self._auto_adjust_counter += 1
-                if self._auto_adjust_counter >= 15:  # Check less frequently (every ~3 seconds)
-                    self._auto_adjust_counter = 0
-                    self.auto_adjust_integration_time()
+            # Removed auto-adjust integration time functionality
         
         except Exception as e:
             # Log the error but don't crash
@@ -348,9 +369,12 @@ class SpectrometerController(QObject):
             self.status_signal.emit("Spectrometer not ready")
             return
         
+        # Get all settings from UI
         integration_time = float(self.integ_spinbox.value())
+        cycles = self.cycles_spinbox.value()
+        repetitions = self.repetitions_spinbox.value()
         
-        # Calculate averages based on integration time (same logic as in start method)
+        # Calculate averages based on integration time
         if integration_time < 10:
             averages = 10
         elif integration_time < 100:
@@ -370,23 +394,27 @@ class SpectrometerController(QObject):
             
             # Use StopMeasureThread to properly stop the measurement
             th = StopMeasureThread(self.handle, parent=self)
-            th.finished_signal.connect(lambda: self._apply_new_settings(integration_time, averages))
+            th.finished_signal.connect(lambda: self._apply_new_settings(integration_time, averages, cycles, repetitions))
             th.start()
         else:
             # Just prepare the measurement with new settings
             code = prepare_measurement(self.handle, self.npix, 
                                       integration_time_ms=integration_time, 
-                                      averages=averages)
+                                      averages=averages,
+                                      cycles=cycles,
+                                      repetitions=repetitions)
             if code != 0:
                 self.status_signal.emit(f"Settings update error: {code}")
                 return
-            self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages})")
+            self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
 
-    def _apply_new_settings(self, integration_time, averages):
+    def _apply_new_settings(self, integration_time, averages, cycles, repetitions):
         """Helper to apply new settings after measurement has stopped"""
         code = prepare_measurement(self.handle, self.npix, 
                                   integration_time_ms=integration_time, 
-                                  averages=averages)
+                                  averages=averages,
+                                  cycles=cycles,
+                                  repetitions=repetitions)
         if code != 0:
             self.status_signal.emit(f"Settings update error: {code}")
             return
@@ -400,70 +428,12 @@ class SpectrometerController(QObject):
         
         self.measure_active = True
         self.stop_btn.setEnabled(True)
-        self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages})")
+        self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
 
-    def auto_adjust_integration_time(self):
-        """Automatically adjust integration time based on peak value and filter wheel position"""
-        if not self.intens:
-            return
-        
-        # Get the peak value from the intensity data
-        peak_value = max(self.intens)
-        
-        # Get the current filter wheel position
-        filter_pos = 1  # Default position
-        if hasattr(self, 'parent') and self.parent() is not None:
-            # Try to get filter wheel position from parent (MainWindow)
-            if hasattr(self.parent(), 'filter_ctrl'):
-                filter_pos = self.parent().filter_ctrl.get_position() or 1
-        
-        # Determine the appropriate integration time
-        current_integ_time = self.integ_spinbox.value()
-        new_integ_time = current_integ_time
-        
-        if peak_value < 500 and filter_pos == 1:
-            new_integ_time = 4000  # 4000ms (4s) for low signal with filter 1
-        else:
-            new_integ_time = 1000  # 1000ms (1s) for other cases
-        
-        # Only update if the integration time has changed
-        if new_integ_time != current_integ_time:
-            self.status_signal.emit(f"Auto-adjusting integration time to {new_integ_time}ms (Peak: {peak_value:.1f}, Filter: {filter_pos})")
-            self.integ_spinbox.setValue(new_integ_time)
-            
-            # If measurement is active, apply the new settings
-            if hasattr(self, 'measure_active') and self.measure_active:
-                self.update_measurement_settings()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # Removed auto_adjust_integration_time method
+    # def auto_adjust_integration_time(self):
+    #     """Automatically adjust integration time based on peak value and filter wheel position"""
+    #     ...
 
 
 
