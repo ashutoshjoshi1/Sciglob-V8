@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import QGroupBox, QLabel, QComboBox, QPushButton, QLineEdit, QGridLayout
+from PyQt5.QtWidgets import QGroupBox, QLabel, QComboBox, QPushButton, QLineEdit, QGridLayout, QHBoxLayout
 from serial.tools import list_ports
 
 from drivers.motor import MotorConnectThread, send_move_command
@@ -12,22 +12,21 @@ class MotorController(QObject):
         self.groupbox = QGroupBox("Motor")
         self.groupbox.setObjectName("motorGroup")
         layout = QGridLayout()
-
-        # Bold labels for important elements
-        port_label = QLabel("COM:")
-        port_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(port_label, 0, 0)
         
-        self.port_combo = QComboBox()
-        self.port_combo.setEditable(True)
-        ports = [p.device for p in list_ports.comports()]
-        self.port_combo.addItems(ports or [f"COM{i}" for i in range(1, 10)])
-        layout.addWidget(self.port_combo, 0, 1)
+        # Remove port selection and connect button
+        # Instead, use a status indicator
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Status: Not Connected")
+        self.status_label.setStyleSheet("color: #f44336;")  # Red for not connected
+        status_layout.addWidget(self.status_label)
         
+        # Add connect button that uses the port from config
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.clicked.connect(self.connect)
-        layout.addWidget(self.connect_btn, 0, 2)
-
+        status_layout.addWidget(self.connect_btn)
+        
+        layout.addLayout(status_layout, 0, 0, 1, 3)
+        
         # Add preset angle dropdown with bold label
         preset_label = QLabel("Preset (°):")
         preset_label.setStyleSheet("font-weight: bold;")
@@ -57,17 +56,23 @@ class MotorController(QObject):
         self._connected = False
         self.serial = None
 
-        # If configured port is provided, select and auto-connect
+        # If configured port is provided, auto-connect
         if parent is not None and hasattr(parent, 'config'):
             cfg_port = parent.config.get("motor")
             if cfg_port:
-                self.port_combo.setCurrentText(cfg_port)
+                self.port = cfg_port
                 self.connect()
 
     def connect(self):
-        port = self.port_combo.currentText().strip()
+        """Connect to the motor controller"""
+        if not hasattr(self, 'port') or not self.port:
+            self.status_signal.emit("No port specified for motor controller")
+            return
+        
         self.connect_btn.setEnabled(False)
-        thread = MotorConnectThread(port, parent=self)
+        self.status_signal.emit(f"Connecting to motor controller on {self.port}...")
+        
+        thread = MotorConnectThread(self.port, parent=self)
         thread.result_signal.connect(self._on_connect)
         thread.start()
 
@@ -116,6 +121,10 @@ class MotorController(QObject):
 
     def is_connected(self):
         return self._connected
+
+
+
+
 
 
 

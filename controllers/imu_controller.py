@@ -21,28 +21,19 @@ class IMUController(QObject):
         main_layout = QVBoxLayout()
         main_layout.setSpacing(2)  # Reduce spacing
         
-        # Port controls in a compact horizontal layout
-        port_layout = QHBoxLayout()
-        port_layout.addWidget(QLabel("COM:"))
-        self.port_combo = QComboBox()
-        self.port_combo.setEditable(True)
-        self.port_combo.setMaximumWidth(80)
-        ports = [p.device for p in list_ports.comports()]
-        self.port_combo.addItems(ports or [f"COM{i}" for i in range(1, 10)])
-        port_layout.addWidget(self.port_combo)
+        # Remove port controls
+        # Instead, use a status indicator
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Status: Not Connected")
+        self.status_label.setStyleSheet("color: #f44336;")  # Red for not connected
+        status_layout.addWidget(self.status_label)
         
-        port_layout.addWidget(QLabel("Baud:"))
-        self.baud_combo = QComboBox()
-        self.baud_combo.setMaximumWidth(70)
-        self.baud_combo.addItems(["9600", "57600", "115200"])
-        port_layout.addWidget(self.baud_combo)
-        
+        # Add connect button that uses the port from config
         self.connect_btn = QPushButton("Connect")
-        self.connect_btn.setMaximumWidth(70)
         self.connect_btn.clicked.connect(self.connect)
-        port_layout.addWidget(self.connect_btn)
+        status_layout.addWidget(self.connect_btn)
         
-        main_layout.addLayout(port_layout)
+        main_layout.addLayout(status_layout)
         
         # Data label - compact but readable
         self.data_label = QLabel("Not connected")
@@ -66,24 +57,35 @@ class IMUController(QObject):
         if parent is not None and hasattr(parent, 'config'):
             cfg_port = parent.config.get("imu")
             if cfg_port:
-                self.port_combo.setCurrentText(cfg_port)
+                self.port = cfg_port
                 self.connect()
 
     def connect(self):
+        """Connect to the IMU"""
+        if not hasattr(self, 'port') or not self.port:
+            self.status_signal.emit("No port specified for IMU")
+            return
+        
         if self._connected:
             return self.status_signal.emit("Already connected")
-        port = self.port_combo.currentText().strip()
-        baud = int(self.baud_combo.currentText())
+        
         try:
-            self.serial = serial.Serial(port, baud, timeout=1)
+            self.serial = serial.Serial(self.port, 115200, timeout=1)  # Default to 115200 baud
         except Exception as e:
-            return self.status_signal.emit(f"Fail: {e}")
+            self.status_label.setText("Status: Connection Failed")
+            return self.status_signal.emit(f"IMU connection failed: {e}")
+        
         self._connected = True
-        self.status_signal.emit(f"IMU on {port}@{baud}")
+        self.status_label.setText("Status: Connected")
+        self.status_label.setStyleSheet("color: #4CAF50;")  # Green for connected
+        self.status_signal.emit(f"IMU connected on {self.port}")
+        
         self.stop_evt = start_imu_read_thread(self.serial, self.latest)
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self._refresh)
         self.update_timer.start(100)
+        
+        return True
 
     def _update_cam(self):
         if self.cam.isOpened():
@@ -120,6 +122,11 @@ class IMUController(QObject):
 
     def is_connected(self):
         return self._connected
+
+
+
+
+
 
 
 

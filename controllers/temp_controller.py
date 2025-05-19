@@ -10,25 +10,27 @@ class TempController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Group box for Temperature Controller
-        self.widget = QGroupBox("Temperature Controller")
-        self.widget.setObjectName("tempGroup")
+        self.groupbox = QGroupBox("Temperature Controller")
+        self.groupbox.setObjectName("tempGroup")
+        # Add widget attribute to match the expected interface
+        self.widget = self.groupbox
+        
         layout = QGridLayout()
         layout.setVerticalSpacing(8)  # Increase vertical spacing between rows
         
-        # Use bold labels and larger fonts for important elements
-        port_label = QLabel("COM Port:")
-        port_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(port_label, 0, 0)
+        # Remove port selection
+        # Instead, use a status indicator
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Status: Not Connected")
+        self.status_label.setStyleSheet("color: #f44336;")  # Red for not connected
+        status_layout.addWidget(self.status_label)
         
-        self.port_combo = QComboBox()
-        self.port_combo.setEditable(True)
-        ports = [p.device for p in list_ports.comports()]
-        self.port_combo.addItems(ports or [f"COM{i}" for i in range(1, 10)])
-        layout.addWidget(self.port_combo, 0, 1)
-        
+        # Add connect button that uses the port from config
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.clicked.connect(self.connect)
-        layout.addWidget(self.connect_btn, 0, 2)
+        status_layout.addWidget(self.connect_btn)
+        
+        layout.addLayout(status_layout, 0, 0, 1, 3)
         
         # Current temperature with bold label and larger font
         temp_label = QLabel("Current:")
@@ -75,29 +77,14 @@ class TempController(QObject):
         
         layout.addLayout(setpoint_layout, 3, 1, 1, 2)
         
-        self.widget.setLayout(layout)
+        self.groupbox.setLayout(layout)
 
-        # Initialize temperature controller hardware
-        port = None
+        # Auto-select config port if provided
         if parent is not None and hasattr(parent, 'config'):
-            port = parent.config.get("temp_controller")
-        try:
-            self.tc = TC36_25(port if port else "COM16")
-        except Exception as e:
-            self.status_signal.emit(f"TempController connection failed: {e}")
-            return
-        # Once connected, enable computer control and turn on power
-        try:
-            self.tc.enable_computer_setpoint()
-            self.tc.power(True)
-        except Exception as e:
-            self.status_signal.emit(f"TC init failed: {e}")
-        # Start periodic update
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._upd)
-        self.timer.start(1000)
-        self.set_btn.setEnabled(True)
-        self.setpoint_spin.setEnabled(True)
+            cfg_port = parent.config.get("temp_controller")
+            if cfg_port:
+                self.port = cfg_port
+                self.connect()
 
     def set_preset_temp(self, temp):
         """Set temperature to a preset value (kept for backward compatibility)"""
@@ -206,11 +193,14 @@ class TempController(QObject):
 
     def connect(self):
         """Connect to the temperature controller"""
-        port = self.port_combo.currentText().strip()
-        self.status_signal.emit(f"Connecting to temperature controller on {port}...")
+        if not hasattr(self, 'port') or not self.port:
+            self.status_signal.emit("No port specified for temperature controller")
+            return
+        
+        self.status_signal.emit(f"Connecting to temperature controller on {self.port}...")
         
         try:
-            self.tc = TC36_25(port)
+            self.tc = TC36_25(self.port)
             # Once connected, enable computer control and turn on power
             self.tc.enable_computer_setpoint()
             self.tc.power(True)
@@ -219,28 +209,47 @@ class TempController(QObject):
             self.setpoint_spin.setEnabled(True)
             self.set_btn.setEnabled(True)
             
+            # Update status indicator
+            self.status_label.setText("Status: Connected")
+            self.status_label.setStyleSheet("color: #4CAF50;")  # Green for connected
+            
             # Start periodic update
             if not hasattr(self, 'timer') or not self.timer.isActive():
                 self.timer = QTimer(self)
                 self.timer.timeout.connect(self._upd)
                 self.timer.start(1000)
-                
-            self.status_signal.emit(f"Temperature controller connected on {port}")
+            
+            self.status_signal.emit(f"Temperature controller connected on {self.port}")
+            return True
         except Exception as e:
+            self.status_label.setText("Status: Connection Failed")
             self.status_signal.emit(f"Temperature controller connection failed: {e}")
+            return False
 
+    def set_temperature(self, temp):
+        """Set temperature to a specific value (for routine manager)"""
+        if not hasattr(self, 'tc'):
+            self.status_signal.emit("Temperature controller not connected")
+            return False
+        
+        try:
+            self.setpoint_spin.setValue(temp)
+            self.set_temp()
+            return True
+        except Exception as e:
+            self.status_signal.emit(f"Failed to set temperature: {e}")
+            return False
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def disable(self):
+        """Turn off the temperature controller"""
+        if not hasattr(self, 'tc'):
+            self.status_signal.emit("Temperature controller not connected")
+            return False
+        
+        try:
+            self.tc.power(False)
+            self.status_signal.emit("Temperature controller turned off")
+            return True
+        except Exception as e:
+            self.status_signal.emit(f"Failed to turn off temperature controller: {e}")
+            return False

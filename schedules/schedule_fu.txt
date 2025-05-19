@@ -8,8 +8,10 @@ wait 2000
 wait 1000
 # Start spectrometer with appropriate settingsspectrometer start
 wait 3000
-# Save the first measurementlog Saving full spectrum data with open filter
-spectrometer savewait 1000
+# Save the first measurement
+log Saving full spectrum data with open filter
+spectrometer save
+wait 1000
 # Change filter and save another measurement
 filter position 3wait 1000
 log Saving full spectrum data with filter 3spectrometer save
