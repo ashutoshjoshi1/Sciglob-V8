@@ -13,6 +13,7 @@ class TempController(QObject):
         self.widget = QGroupBox("Temperature Controller")
         self.widget.setObjectName("tempGroup")
         layout = QGridLayout()
+        layout.setVerticalSpacing(8)  # Increase vertical spacing between rows
         
         # Use bold labels and larger fonts for important elements
         port_label = QLabel("COM Port:")
@@ -38,13 +39,23 @@ class TempController(QObject):
         self.temp_display.setStyleSheet("font-size: 12pt; font-weight: bold;")
         layout.addWidget(self.temp_display, 1, 1)
         
+        # Add auxiliary temperature display
+        aux_temp_label = QLabel("Auxiliary:")
+        aux_temp_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(aux_temp_label, 2, 0)
+        
+        self.aux_temp_display = QLabel("-- °C")
+        self.aux_temp_display.setStyleSheet("font-size: 12pt; font-weight: bold;")
+        layout.addWidget(self.aux_temp_display, 2, 1)
+        
         # Setpoint with bold label and more intuitive layout
         setpoint_label = QLabel("Set Temperature:")
         setpoint_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
-        layout.addWidget(setpoint_label, 2, 0)
+        layout.addWidget(setpoint_label, 3, 0)
         
         # Use a horizontal layout for the setpoint controls
         setpoint_layout = QHBoxLayout()
+        setpoint_layout.setContentsMargins(0, 5, 0, 0)  # Add some top margin
         
         self.setpoint_spin = QDoubleSpinBox()
         self.setpoint_spin.setRange(15, 40)
@@ -62,9 +73,7 @@ class TempController(QObject):
         self.set_btn.setStyleSheet("font-weight: bold; font-size: 11pt;")
         setpoint_layout.addWidget(self.set_btn)
         
-        layout.addLayout(setpoint_layout, 2, 1, 1, 2)
-        
-        # Remove preset temperature buttons section
+        layout.addLayout(setpoint_layout, 3, 1, 1, 2)
         
         self.widget.setLayout(layout)
 
@@ -118,7 +127,21 @@ class TempController(QObject):
                 self._temp_read_timer.daemon = True
                 self._temp_read_timer.start()
                 
+            # Read primary temperature
             current = self.tc.get_temperature()
+            
+            # Read auxiliary temperature
+            try:
+                aux_temp = self.tc.get_auxiliary_temperature()
+                self.aux_temp_display.setText(f"{aux_temp:.2f} °C")
+                # Store auxiliary temperature for data logging
+                self._aux_temperature = aux_temp
+            except Exception as e:
+                self.aux_temp_display.setText("-- °C")
+                self._aux_temperature = 0.0
+                # Only log error if it's not a timeout
+                if not hasattr(self, '_temp_read_timeout') or not self._temp_read_timeout:
+                    self.status_signal.emit(f"Auxiliary temperature read error: {e}")
             
             # Cancel timeout timer if successful
             if hasattr(self, '_temp_read_timer') and self._temp_read_timer is not None:
@@ -138,6 +161,7 @@ class TempController(QObject):
             
         except Exception as e:
             self.temp_display.setText("-- °C")
+            self.aux_temp_display.setText("-- °C")
             # Only show error message if it's not a timeout
             if not hasattr(self, '_temp_read_timeout') or not self._temp_read_timeout:
                 self.status_signal.emit(f"Temperature read error: {e}")
@@ -163,6 +187,16 @@ class TempController(QObject):
         # Last set temperature (if known)
         try:
             return self.setpoint_spin.value()
+        except:
+            return 0.0
+
+    @property
+    def auxiliary_temp(self):
+        # Auxiliary temperature reading from controller
+        try:
+            if hasattr(self, '_aux_temperature'):
+                return self._aux_temperature
+            return 0.0
         except:
             return 0.0
 
@@ -194,6 +228,10 @@ class TempController(QObject):
             self.status_signal.emit(f"Temperature controller connected on {port}")
         except Exception as e:
             self.status_signal.emit(f"Temperature controller connection failed: {e}")
+
+
+
+
 
 
 

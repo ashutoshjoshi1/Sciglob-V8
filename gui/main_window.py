@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
         preset_layout.addWidget(preset_label)
 
         self.preset_combo = QComboBox()
-        self.preset_combo.addItems(["Select Code", "SO", "FU", "RE"])
+        self.preset_combo.addItems(["Select Code", "SO", "FU", "RE", "SG"])
         self.preset_combo.setCurrentIndex(0)
         self.preset_combo.currentIndexChanged.connect(self.load_preset_schedule)
         preset_layout.addWidget(self.preset_combo)
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
         self.temp_ctrl = TempController(parent=self)
         self.temp_ctrl.status_signal.connect(self.statusBar().showMessage)
         self.temp_ctrl.status_signal.connect(self.handle_status_message)
-        self.temp_ctrl.widget.setMaximumHeight(150)  # Limit height
+        self.temp_ctrl.widget.setMaximumHeight(180)  # Increased from 150 to 180
         controllers_grid.addWidget(self.temp_ctrl.widget, 0, 0, 1, 2)  # Span both columns
 
         # Motor controller (middle left)
@@ -411,7 +411,7 @@ class MainWindow(QMainWindow):
                 "Timestamp", "MotorAngle_deg", "FilterPos",
                 "Roll_deg", "Pitch_deg", "Yaw_deg", "AccelX_g", "AccelY_g", "AccelZ_g",
                 "MagX_uT", "MagY_uT", "MagZ_uT",
-                "Pressure_hPa", "Temperature_C", "TempCtrl_curr", "TempCtrl_set",
+                "Pressure_hPa", "Temperature_C", "TempCtrl_curr", "TempCtrl_set", "TempCtrl_aux",
                 "Latitude_deg", "Longitude_deg", "IntegrationTime_us",
                 "THP_Temp_C", "THP_Humidity_pct", "THP_Pressure_hPa"
             ]
@@ -592,6 +592,7 @@ class MainWindow(QMainWindow):
             # Get temperature controller data
             tc_curr = self.temp_ctrl.current_temp
             tc_set = self.temp_ctrl.setpoint
+            tc_aux = self.temp_ctrl.auxiliary_temp
             
             # Get integration time
             integ_us = self.spec_ctrl.current_integration_time_us
@@ -607,7 +608,7 @@ class MainWindow(QMainWindow):
                 ts_csv, str(motor_angle), str(filter_pos),
                 f"{r:.2f}", f"{p:.2f}", f"{y:.2f}", f"{ax:.2f}", f"{ay:.2f}", f"{az:.2f}",
                 f"{mx:.2f}", f"{my:.2f}", f"{mz:.2f}",
-                f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}",
+                f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}", f"{tc_aux:.2f}",
                 f"{lat:.6f}", f"{lon:.6f}", str(integ_us), f"{thp_temp:.2f}",
                 f"{thp_hum:.2f}", f"{thp_pres:.2f}"
             ]
@@ -1082,7 +1083,8 @@ class MainWindow(QMainWindow):
         preset_files = {
             "SO": os.path.join(schedules_dir, "schedule_so.txt"),
             "FU": os.path.join(schedules_dir, "schedule_fu.txt"),
-            "RE": os.path.join(schedules_dir, "schedule_re.txt")
+            "RE": os.path.join(schedules_dir, "schedule_re.txt"),
+            "SG": os.path.join(schedules_dir, "schedule_sg.txt")
         }
         
         file_path = preset_files.get(preset_name)
@@ -1174,6 +1176,10 @@ class MainWindow(QMainWindow):
         
         except Exception as e:
             self.statusBar().showMessage(f"Error creating preset schedule file: {e}")
+
+
+
+
 
 
 
