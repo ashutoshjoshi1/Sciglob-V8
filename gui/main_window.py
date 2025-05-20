@@ -398,22 +398,46 @@ class MainWindow(QMainWindow):
             if self.log_file:
                 self.log_file.close()
             ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
-            self.csv_file_path = os.path.join(self.csv_dir, f"Scans_{ts}_mini.csv")
-            self.log_file_path = os.path.join(self.log_dir, f"log_{ts}.txt")
+            
+            # Get current routine name if available
+            routine_name = getattr(self, 'current_routine_name', "Unknown")
+            
+            # Create folder structure: Routine Name/Date_Time/
+            routine_folder = os.path.join(self.csv_dir, routine_name)
+            date_time_folder = os.path.join(routine_folder, ts)
+            os.makedirs(routine_folder, exist_ok=True)
+            os.makedirs(date_time_folder, exist_ok=True)
+            
+            self.csv_file_path = os.path.join(date_time_folder, f"Scans_{routine_name}_{ts}.csv")
+            self.log_file_path = os.path.join(date_time_folder, f"log_{routine_name}_{ts}.txt")
+            
             try:
                 self.csv_file = open(self.csv_file_path, "w", encoding="utf-8", newline="")
                 self.log_file = open(self.log_file_path, "w", encoding="utf-8")
             except Exception as e:
                 self.statusBar().showMessage(f"Cannot open files: {e}")
                 return
+            
+            # Add metadata header with routine information
+            self.csv_file.write(f"# Routine: {routine_name}\n")
+            
+            # Get cycles and repetitions
+            cycles = getattr(self, 'current_cycles', 1)
+            repetitions = getattr(self, 'current_repetitions', 1)
+            
+            self.csv_file.write(f"# Cycles: {cycles}\n")
+            self.csv_file.write(f"# Repetitions: {repetitions}\n")
+            self.csv_file.write(f"# Start Time: {ts}\n")
+            self.csv_file.write(f"# ----------------------------------------\n")
+            
             # Remove unwanted columns from headers
             headers = [
-                "Timestamp", "MotorAngle_deg", "FilterPos",
+                "Timestamp", "RoutineName", "Cycles", "Repetitions", "MotorAngle_deg", "FilterPos",
                 "Roll_deg", "Pitch_deg", "Yaw_deg", "AccelX_g", "AccelY_g", "AccelZ_g",
                 "MagX_uT", "MagY_uT", "MagZ_uT",
                 "Pressure_hPa", "Temperature_C", "TempCtrl_curr", "TempCtrl_set", "TempCtrl_aux",
                 "Latitude_deg", "Longitude_deg", "IntegrationTime_us",
-                "THP_Temp_C", "THP_Humidity_pct", "THP_Pressure_hPa"
+                "THP_Temp_C", "THP_Humidity_pct", "THP_Pressure_hPa", "RoutineCommand"
             ]
             headers += [f"Pixel_{i}" for i in range(len(self.spec_ctrl.intens))]
             self.csv_file.write(",".join(headers) + "\n")
@@ -541,6 +565,9 @@ class MainWindow(QMainWindow):
             ts_csv = now.toString("yyyy-MM-dd hh:mm:ss.zzz")
             ts_txt = now.toString("yyyy-MM-dd hh:mm:ss")
             
+            # Get current routine command if available
+            routine_command = getattr(self, 'current_routine_command', "")
+            
             # Average the intensity data from all collected samples
             num_samples = len(self._data_collection)
             if num_samples == 0:
@@ -571,23 +598,16 @@ class MainWindow(QMainWindow):
             if filter_pos is None:
                 filter_pos = getattr(self.filter_ctrl, "current_position", 0)
             
-            # Get IMU data - use the latest data directly from the IMU controller
-            # The IMUController stores data in self.latest dictionary
-            r, p, y = self.imu_ctrl.latest['rpy']
+            # Get IMU data
+            imu_data = self.get_imu_data()
+            r, p, y = imu_data['rpy']
+            ax, ay, az = imu_data['accel']
+            mx, my, mz = imu_data['mag']
             
-            # Check if accel, mag data exists in the latest dictionary
-            ax, ay, az = 0, 0, 0
-            if 'accel' in self.imu_ctrl.latest:
-                ax, ay, az = self.imu_ctrl.latest['accel']
-            
-            mx, my, mz = 0, 0, 0
-            if 'mag' in self.imu_ctrl.latest:
-                mx, my, mz = self.imu_ctrl.latest['mag']
-            
-            pres = self.imu_ctrl.latest['pressure']
-            temp_env = self.imu_ctrl.latest['temperature']
-            lat = self.imu_ctrl.latest['latitude']
-            lon = self.imu_ctrl.latest['longitude']
+            pres = imu_data['pressure']
+            temp_env = imu_data['temperature']
+            lat = imu_data['latitude']
+            lon = imu_data['longitude']
             
             # Get temperature controller data
             tc_curr = self.temp_ctrl.current_temp
@@ -603,14 +623,20 @@ class MainWindow(QMainWindow):
             thp_hum = thp.get("humidity", 0)
             thp_pres = thp.get("pressure", 0)
             
-            # Create CSV row
+            # Get current routine info
+            routine_name = getattr(self, 'current_routine_name', "Unknown")
+            cycles = getattr(self, 'current_cycles', 1)
+            repetitions = getattr(self, 'current_repetitions', 1)
+            
+            # Create CSV row with routine information
             row = [
-                ts_csv, str(motor_angle), str(filter_pos),
+                ts_csv, routine_name, str(cycles), str(repetitions),
+                str(motor_angle), str(filter_pos),
                 f"{r:.2f}", f"{p:.2f}", f"{y:.2f}", f"{ax:.2f}", f"{ay:.2f}", f"{az:.2f}",
                 f"{mx:.2f}", f"{my:.2f}", f"{mz:.2f}",
                 f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}", f"{tc_aux:.2f}",
                 f"{lat:.6f}", f"{lon:.6f}", str(integ_us), f"{thp_temp:.2f}",
-                f"{thp_hum:.2f}", f"{thp_pres:.2f}"
+                f"{thp_hum:.2f}", f"{thp_pres:.2f}", routine_command
             ]
             
             # Add averaged intensity values
@@ -720,6 +746,9 @@ class MainWindow(QMainWindow):
             with open(file_path, 'r') as f:
                 self.routine_commands = f.readlines()
             
+            # Store the file path for later reference
+            self.loaded_routine_file = file_path
+            
             # Remove comments and empty lines
             self.routine_commands = [line.strip() for line in self.routine_commands 
                                     if line.strip() and not line.strip().startswith('#')]
@@ -744,28 +773,49 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No routine loaded")
             return
         
+        # Get routine name from loaded file or preset
+        if hasattr(self, 'loaded_routine_file'):
+            self.current_routine_name = os.path.basename(self.loaded_routine_file).replace('.txt', '')
+        elif self.preset_combo.currentIndex() > 0:
+            self.current_routine_name = self.preset_combo.currentText()
+        else:
+            self.current_routine_name = "Custom"
+        
+        # Get cycles and repetitions from spectrometer controller if available
+        if hasattr(self.spec_ctrl, 'cycles_spinbox'):
+            self.current_cycles = self.spec_ctrl.cycles_spinbox.value()
+        else:
+            self.current_cycles = 1
+        
+        if hasattr(self.spec_ctrl, 'repetitions_spinbox'):
+            self.current_repetitions = self.spec_ctrl.repetitions_spinbox.value()
+        else:
+            self.current_repetitions = 1
+        
         self.statusBar().showMessage("Starting routine execution...")
         self.routine_status.setText("Running routine...")
         self.run_routine_btn.setEnabled(False)
         
         # Create a timer to execute commands sequentially
         self.routine_index = 0
+        self.current_routine_command = ""  # Initialize current command
         self.routine_timer = QTimer(self)
         self.routine_timer.timeout.connect(self.execute_next_routine_command)
         self.routine_timer.start(1000)  # Start with 1 second interval
 
     def execute_next_routine_command(self):
-        """Execute the next command in the schedule sequence"""
+        """Execute the next command in the routine sequence"""
         if self.routine_index >= len(self.routine_commands):
             # All commands completed
             self.routine_timer.stop()
-            self.routine_status.setText("Schedule execution completed")
+            self.routine_status.setText("Routine execution completed")
             self.run_routine_btn.setEnabled(True)
-            self.statusBar().showMessage("Schedule execution completed")
+            self.statusBar().showMessage("Routine execution completed")
             return
         
         # Get the current command
         command = self.routine_commands[self.routine_index]
+        self.current_routine_command = command  # Store current command for data logging
         self.routine_index += 1
         
         # Update status
@@ -1176,6 +1226,16 @@ class MainWindow(QMainWindow):
         
         except Exception as e:
             self.statusBar().showMessage(f"Error creating preset schedule file: {e}")
+
+
+
+
+
+
+
+
+
+
 
 
 
