@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import datetime
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 from PyQt5.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget, 
@@ -14,7 +13,7 @@ from drivers.spectrometer import connect_spectrometer, AVS_MeasureCallback, AVS_
 class SpectrometerController(QObject):
     status_signal = pyqtSignal(str)
 
-    def __init__(self, parent=None, auto_connect=True):
+    def __init__(self, parent=None):
         super().__init__(parent)
         # Group box UI
         self.groupbox = QGroupBox("Spectrometer")
@@ -46,129 +45,136 @@ class SpectrometerController(QObject):
         self.save_btn.clicked.connect(self.save)
         btn_layout.addWidget(self.save_btn)
         
+        self.toggle_btn = QPushButton("Start Saving")
+        self.toggle_btn.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        self.toggle_btn.setEnabled(False)
+        self.toggle_btn.clicked.connect(self.toggle)
+        btn_layout.addWidget(self.toggle_btn)
+        
         main_layout.addLayout(btn_layout)
         
-        # Add tabs for different plot views
-        self.tabs = QTabWidget()
-        
-        # Pixel plot tab (now first)
-        px_tab = QWidget()
-        px_layout = QVBoxLayout(px_tab)
-        
-        # Create pixel plot
-        self.plot_px = pg.PlotWidget()
-        self.plot_px.setBackground('k')
-        self.plot_px.setLabel('left', 'Intensity', units='counts')
-        self.plot_px.setLabel('bottom', 'Pixel', units='')
-        self.plot_px.showGrid(x=False, y=False)  # No grids
-        self.plot_px.setTitle("Spectrum (Pixel)")
-        self.plot_px.setXRange(0, 2048)  # Set x-axis range from 0 to 2048
-        
-        # Create curve for pixel plot
-        pen = pg.mkPen(color=(255, 165, 0), width=2)
-        self.curve_px = self.plot_px.plot([], [], pen=pen)
-        
-        px_layout.addWidget(self.plot_px)
-        self.tabs.addTab(px_tab, "Pixel")
-        
-        # Wavelength plot tab (now second)
-        wl_tab = QWidget()
-        wl_layout = QVBoxLayout(wl_tab)
-        
-        # Create wavelength plot
-        self.plot_wl = pg.PlotWidget()
-        self.plot_wl.setBackground('k')
-        self.plot_wl.setLabel('left', 'Intensity', units='counts')
-        self.plot_wl.setLabel('bottom', 'Wavelength', units='nm')
-        self.plot_wl.showGrid(x=False, y=False)  # No grids
-        self.plot_wl.setTitle("Spectrum (Wavelength)")
-        
-        # Create curve for wavelength plot
-        pen = pg.mkPen(color=(0, 255, 0), width=2)
-        self.curve_wl = self.plot_wl.plot([], [], pen=pen)
-        
-        wl_layout.addWidget(self.plot_wl)
-        self.tabs.addTab(wl_tab, "Wavelength")
-        
-        # Set the Pixel tab as the default (index 0)
-        self.tabs.setCurrentIndex(0)
-        
-        # Add tabs to main layout
-        main_layout.addWidget(self.tabs)
-        
-        # Add settings panel
-        settings_group = QGroupBox("Settings")
-        settings_layout = QVBoxLayout()
-        
-        # Integration time
+        # Integration time controls with bold labels
         integ_layout = QHBoxLayout()
-        integ_layout.addWidget(QLabel("Integration Time (ms):"))
+
+        integ_label = QLabel("Integration Time (ms):")
+        integ_label.setStyleSheet("font-weight: bold;")
+        integ_layout.addWidget(integ_label)
+
         self.integ_spinbox = QSpinBox()
-        self.integ_spinbox.setRange(1, 10000)
-        self.integ_spinbox.setValue(100)
+        self.integ_spinbox.setRange(1, 4000)  # 1ms to 4s
+        self.integ_spinbox.setValue(50)  # Default 50ms
         self.integ_spinbox.setSingleStep(10)
         integ_layout.addWidget(self.integ_spinbox)
-        settings_layout.addLayout(integ_layout)
-        
-        # Cycles
-        cycles_layout = QHBoxLayout()
-        cycles_layout.addWidget(QLabel("Cycles:"))
-        self.cycles_spinbox = QSpinBox()
-        self.cycles_spinbox.setRange(1, 100)
-        self.cycles_spinbox.setValue(1)
-        cycles_layout.addWidget(self.cycles_spinbox)
-        settings_layout.addLayout(cycles_layout)
-        
-        # Repetitions
-        rep_layout = QHBoxLayout()
-        rep_layout.addWidget(QLabel("Repetitions:"))
-        self.repetitions_spinbox = QSpinBox()
-        self.repetitions_spinbox.setRange(1, 100)
-        self.repetitions_spinbox.setValue(1)
-        rep_layout.addWidget(self.repetitions_spinbox)
-        settings_layout.addLayout(rep_layout)
-        
-        # Apply button
+
+        # Add the Apply Settings button
         self.apply_btn = QPushButton("Apply Settings")
         self.apply_btn.setEnabled(False)
         self.apply_btn.clicked.connect(self.update_measurement_settings)
-        settings_layout.addWidget(self.apply_btn)
-        
-        settings_group.setLayout(settings_layout)
-        main_layout.addWidget(settings_group)
-        
-        # Add the widget attribute
-        self.widget = self.groupbox
-        
-        # Initialize variables
+        integ_layout.addWidget(self.apply_btn)
+
+        # Removed auto-adjust checkbox
+
+        main_layout.addLayout(integ_layout)
+
+        # Cycles and repetitions controls with bold labels
+        cycles_layout = QHBoxLayout()
+
+        cycles_label = QLabel("Cycles:")
+        cycles_label.setStyleSheet("font-weight: bold;")
+        cycles_layout.addWidget(cycles_label)
+
+        self.cycles_spinbox = QSpinBox()
+        self.cycles_spinbox.setRange(1, 100)  # 1 to 100 cycles
+        self.cycles_spinbox.setValue(1)  # Default 1 cycle
+        self.cycles_spinbox.setSingleStep(1)
+        cycles_layout.addWidget(self.cycles_spinbox)
+
+        repetitions_label = QLabel("Repetitions:")
+        repetitions_label.setStyleSheet("font-weight: bold;")
+        cycles_layout.addWidget(repetitions_label)
+
+        self.repetitions_spinbox = QSpinBox()
+        self.repetitions_spinbox.setRange(1, 100)  # 1 to 100 repetitions
+        self.repetitions_spinbox.setValue(1)  # Default 1 repetition
+        self.repetitions_spinbox.setSingleStep(1)
+        cycles_layout.addWidget(self.repetitions_spinbox)
+
+        main_layout.addLayout(cycles_layout)
+
+        # Spectral plots in tabs
+        pg.setConfigOption('background', '#252525')
+        pg.setConfigOption('foreground', '#e0e0e0')
+        self.tab_widget = QTabWidget()
+
+        # Tab 1: Wavelength vs Intensity
+        tab1 = QWidget()
+        layout1 = QVBoxLayout2(tab1)
+        self.plot_wl = pg.PlotWidget()
+        self.plot_wl.setLabel('bottom', 'Wavelength', 'nm')
+        self.plot_wl.setLabel('left', 'Intensity', 'counts')
+        self.plot_wl.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_wl.getViewBox().enableAutoRange(ViewBox.XYAxes, True)
+        # Add a more attractive style
+        self.curve_wl = self.plot_wl.plot([], [], pen=pg.mkPen('#4a86e8', width=2), 
+                                         symbolBrush=(74, 134, 232), symbolPen='w', symbol='o', 
+                                         symbolSize=5, name="Wavelength Spectrum")
+        layout1.addWidget(self.plot_wl)
+        self.tab_widget.addTab(tab1, "Wavelength vs Intensity")
+
+        # Tab 2: Pixel vs Count
+        tab2 = QWidget()
+        layout2 = QVBoxLayout2(tab2)
+        self.plot_px = pg.PlotWidget()
+        # Set fixed range for x-axis (0-2048 pixels)
+        self.plot_px.setXRange(0, 2048)
+        self.plot_px.setLabel('bottom', 'Pixel', '')  # Remove 'Index' from label
+        self.plot_px.setLabel('left', 'Count', '')
+        # Enable auto-range only for y-axis
+        self.plot_px.getViewBox().enableAutoRange(ViewBox.YAxis, True)
+        self.plot_px.getViewBox().setAutoVisible(y=True)
+        self.plot_px.showGrid(x=True, y=True, alpha=0.3)
+
+        # Configure x-axis ticks to show 0, 100, 200, etc.
+        x_axis = self.plot_px.getAxis('bottom')
+        x_ticks = [(i, str(i)) for i in range(0, 2049, 100)]  # Create ticks at 0, 100, 200, etc.
+        x_axis.setTicks([x_ticks])
+
+        # Add a more attractive style
+        self.curve_px = self.plot_px.plot([], [], pen=pg.mkPen('#f44336', width=2),
+                                         fillLevel=0, fillBrush=pg.mkBrush(244, 67, 54, 50),
+                                         name="Pixel Counts")
+        layout2.addWidget(self.plot_px)
+        self.tab_widget.addTab(tab2, "Pixel vs Count")
+        # Add the tab widget to the groupbox layout
+        main_layout.addWidget(self.tab_widget)
+        self.groupbox.setLayout(main_layout)
+
+        # Internal state
+        self._ready = False
         self.handle = None
         self.wls = []
+        self.intens = []
         self.npix = 0
-        self._ready = False
-        self.measure_active = False
-        self.data = None
-        self.cb = None
-        self.intens = []  # Initialize intens attribute
-        
-        # Set the layout
-        self.groupbox.setLayout(main_layout)
-        
+
+        # Ensure parent MainWindow's toggle_data_saving is used if parent exists
+        if parent is not None:
+            try:
+                self.toggle_btn.clicked.disconnect(self.toggle)
+            except Exception:
+                pass
+            self.toggle_btn.clicked.connect(parent.toggle_data_saving)
+
         # Data directory for snapshots
         self.csv_dir = "data"
         os.makedirs(self.csv_dir, exist_ok=True)
-        
+
         # Timer for updating plot
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self._update_plot)
         self.plot_timer.start(200)  # update plot at 5 Hz
-        
+
         # Add downsampling for plots
         self.downsample_factor = 2  # Only plot every 2nd point
-        
-        # Auto-connect if requested
-        if auto_connect:
-            # Use QTimer to delay connection attempt slightly to allow UI to initialize
-            QTimer.singleShot(500, self.connect)
 
     def connect(self):
         # Emit status for feedback
@@ -265,7 +271,7 @@ class SpectrometerController(QObject):
 
     def _update_plot(self):
         """Update the plots with intensity data, ensuring arrays have matching shapes"""
-        if not hasattr(self, 'intens') or not self.intens:
+        if not self.intens:
             return
         
         try:
@@ -294,16 +300,10 @@ class SpectrometerController(QObject):
                 pixel_indices = pixel_indices[mask]
             
             # Update wavelength plot
-            if hasattr(self, 'curve_wl'):
-                self.curve_wl.setData(wavelengths, intensities)
+            self.curve_wl.setData(wavelengths, intensities)
             
             # Update pixel plot
-            if hasattr(self, 'curve_px'):
-                self.curve_px.setData(pixel_indices, intensities)
-                
-                # Ensure x-axis range stays at 0-2048
-                if hasattr(self, 'plot_px'):
-                    self.plot_px.setXRange(0, 2048, padding=0)
+            self.curve_px.setData(pixel_indices, intensities)
             
             # Auto-adjust y-axis range based on current data, but not too frequently
             if not hasattr(self, '_range_update_counter'):
@@ -315,20 +315,17 @@ class SpectrometerController(QObject):
                 if len(intensities) > 0 and np.max(intensities) > 0:
                     # Add 10% padding to the top of the y-range
                     max_y = np.max(intensities) * 1.1
-                    if hasattr(self, 'plot_px'):
-                        self.plot_px.setYRange(0, max_y)
-                    if hasattr(self, 'plot_wl'):
-                        self.plot_wl.setYRange(0, max_y)
+                    self.plot_px.setYRange(0, max_y)
+            
+            # Removed auto-adjust integration time functionality
         
         except Exception as e:
             # Log the error but don't crash
             print(f"Plot update error: {e}")
             # Try to recover by clearing the plots
             try:
-                if hasattr(self, 'curve_wl'):
-                    self.curve_wl.setData([], [])
-                if hasattr(self, 'curve_px'):
-                    self.curve_px.setData([], [])
+                self.curve_wl.setData([], [])
+                self.curve_px.setData([], [])
             except:
                 pass
 
@@ -347,7 +344,7 @@ class SpectrometerController(QObject):
         self.status_signal.emit("Measurement stopped")
 
     def save(self):
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
         path = os.path.join(self.csv_dir, f"snapshot_{ts}.csv")
         try:
             with open(path, 'w') as f:
@@ -437,21 +434,6 @@ class SpectrometerController(QObject):
     # def auto_adjust_integration_time(self):
     #     """Automatically adjust integration time based on peak value and filter wheel position"""
     #     ...
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

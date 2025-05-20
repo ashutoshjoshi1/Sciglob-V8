@@ -14,20 +14,38 @@ class FilterWheelController(QObject):
         self.groupbox.setObjectName("filterwheelGroup")
         main_layout = QVBoxLayout()
 
-        # Remove connection controls with port selection
-        # Instead, use a status indicator
-        status_layout = QHBoxLayout()
-        self.status_label = QLabel("Status: Not Connected")
-        self.status_label.setStyleSheet("color: #f44336;")  # Red for not connected
-        status_layout.addWidget(self.status_label)
+        # Connection controls
+        conn_layout = QHBoxLayout()
         
-        # Add connect button that uses the port from config
+        port_label = QLabel("COM:")
+        port_label.setStyleSheet("font-weight: bold;")
+        conn_layout.addWidget(port_label)
+        
+        self.port_combo = QComboBox()
+        self.port_combo.setEditable(True)
+        ports = [p.device for p in list_ports.comports()]
+        self.port_combo.addItems(ports or [f"COM{i}" for i in range(1, 10)])
+
+        default_port = "COM17"
+        if parent is not None and hasattr(parent, 'config'):
+            default_port = parent.config.get("filterwheel", default_port)
+        self.port_combo.setCurrentText(default_port)
+        conn_layout.addWidget(self.port_combo)
+
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.clicked.connect(self.connect)
-        status_layout.addWidget(self.connect_btn)
+        conn_layout.addWidget(self.connect_btn)
+
+        pos_label = QLabel("Pos:")
+        pos_label.setStyleSheet("font-weight: bold;")
+        conn_layout.addWidget(pos_label)
         
-        main_layout.addLayout(status_layout)
-        
+        self.pos_label = QLabel("--")
+        self.pos_label.setStyleSheet("font-size: 11pt;")
+        conn_layout.addWidget(self.pos_label)
+
+        main_layout.addLayout(conn_layout)
+
         # Filter type buttons - make them larger and more prominent
         filter_layout = QHBoxLayout()
         
@@ -74,23 +92,13 @@ class FilterWheelController(QObject):
         self.last = None
         self.current_position = None
 
-        # Auto-select config port if provided
-        if parent is not None and hasattr(parent, 'config'):
-            cfg_port = parent.config.get("filterwheel")
-            if cfg_port:
-                self.port = cfg_port
-                self.connect()
+        # Auto-connect on startup
+        self.connect()
 
     def connect(self):
         """Connect to the filter wheel"""
-        if not hasattr(self, 'port') or not self.port:
-            self.status_signal.emit("No port specified for filter wheel")
-            return
-        
         self.connect_btn.setEnabled(False)
-        self.status_signal.emit(f"Connecting to filter wheel on {self.port}...")
-        
-        th = FilterWheelConnectThread(self.port, parent=self)
+        th = FilterWheelConnectThread(self.port_combo.currentText(), parent=self)
         th.result_signal.connect(self._on_connect)
         th.start()
 
@@ -180,9 +188,4 @@ class FilterWheelController(QObject):
 
     def is_connected(self):
         return self._connected
-
-
-
-
-
 
