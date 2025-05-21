@@ -251,15 +251,28 @@ class MainWindow(QMainWindow):
         if is_saving:
             self.statusBar().showMessage("Data saving started")
             
-            # Start data collection timer
+            # Get current integration time from spectrometer controller
+            integration_time_ms = 1000  # Default 1 second
+            if hasattr(self, 'spec_ctrl') and hasattr(self.spec_ctrl, 'current_integration_time_us'):
+                integration_time_ms = self.spec_ctrl.current_integration_time_us
+            
+            # Ensure minimum interval of 100ms
+            collection_interval = max(100, integration_time_ms)
+            
+            # Start data collection timer - collect at integration time rate
             self.data_timer = QTimer(self)
             self.data_timer.timeout.connect(self.data_logger.collect_data_sample)
-            self.data_timer.start(100)  # Collect samples every 100ms
+            self.data_timer.start(collection_interval)
             
-            # Start data saving timer (less frequent)
+            # Start data saving timer - save at integration time rate plus a small buffer
+            save_interval = integration_time_ms + 200  # Add 200ms buffer for processing
             self.save_timer = QTimer(self)
             self.save_timer.timeout.connect(self.data_logger.save_continuous_data)
-            self.save_timer.start(1000)  # Save every 1 second
+            self.save_timer.start(save_interval)
+            
+            # Store the current timers for later adjustment
+            self.data_logger.collection_interval = collection_interval
+            self.data_logger.save_interval = save_interval
             
             # Update button text if it exists
             if hasattr(self, 'toggle_save_btn'):

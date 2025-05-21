@@ -22,6 +22,10 @@ class DataLogger(QObject):
         self._csv_buffer = []
         self._csv_buffer_count = 0
         self._csv_buffer_max = 5  # Write to disk every 5 samples
+        
+        # Store collection and save intervals
+        self.collection_interval = 1000  # Default 1 second
+        self.save_interval = 1200  # Default 1.2 seconds
 
     def toggle_data_saving(self):
         """Toggle continuous data saving on/off"""
@@ -54,7 +58,7 @@ class DataLogger(QObject):
         except Exception as e:
             self.status_signal.emit(f"Cannot open files: {e}")
             return
-            
+        
         # Write headers to CSV file
         headers = self._get_csv_headers()
         self.csv_file.write(",".join(headers) + "\n")
@@ -64,6 +68,17 @@ class DataLogger(QObject):
         # Initialize data collection for averaging
         self._data_collection = []
         self._collection_start_time = QDateTime.currentDateTime()
+        
+        # Log the integration time being used
+        integration_time_ms = 1000  # Default
+        if hasattr(self.main_window, 'spec_ctrl') and hasattr(self.main_window.spec_ctrl, 'current_integration_time_us'):
+            integration_time_ms = self.main_window.spec_ctrl.current_integration_time_us
+        
+        self.status_signal.emit(f"Data saving started with integration time: {integration_time_ms}ms")
+        
+        # Store the collection and save intervals based on integration time
+        self.collection_interval = max(100, integration_time_ms)
+        self.save_interval = integration_time_ms + 200  # Add 200ms buffer
     
     def _stop_data_saving(self):
         """Stop continuous data saving"""

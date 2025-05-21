@@ -374,12 +374,14 @@ class SpectrometerController(QObject):
             averages = 1
         
         # Store current integration time for data saving
-        self.current_integration_time_us = integration_time 
+        self.current_integration_time_us = integration_time
         
+        # Update data collection timers if data logging is active
+        self._update_data_collection_timers(integration_time)
+        
+        # If measurement is active, need to stop and restart with new settings
         if hasattr(self, 'measure_active') and self.measure_active:
-            # First stop the current measurement
-            self.status_signal.emit(f"Stopping measurement to update settings...")
-            self.measure_active = False
+            self.status_signal.emit("Stopping measurement to update settings...")
             
             # Use StopMeasureThread to properly stop the measurement
             th = StopMeasureThread(self.handle, parent=self)
@@ -396,6 +398,28 @@ class SpectrometerController(QObject):
                 self.status_signal.emit(f"Settings update error: {code}")
                 return
             self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
+
+    def _update_data_collection_timers(self, integration_time_ms):
+        """Update data collection timers based on new integration time"""
+        # Check if parent window has data logging active
+        if hasattr(self, 'parent') and self.parent is not None:
+            if hasattr(self.parent, 'data_logger') and hasattr(self.parent.data_logger, 'continuous_saving'):
+                if self.parent.data_logger.continuous_saving:
+                    # Ensure minimum interval of 100ms
+                    collection_interval = max(100, integration_time_ms)
+                    save_interval = integration_time_ms + 200  # Add 200ms buffer
+                    
+                    # Update the timers if they exist
+                    if hasattr(self.parent, 'data_timer'):
+                        self.parent.data_timer.setInterval(collection_interval)
+                    if hasattr(self.parent, 'save_timer'):
+                        self.parent.save_timer.setInterval(save_interval)
+                    
+                    # Store the updated intervals
+                    self.parent.data_logger.collection_interval = collection_interval
+                    self.parent.data_logger.save_interval = save_interval
+                    
+                    self.status_signal.emit(f"Updated data collection interval to {collection_interval}ms")
 
     def _apply_new_settings(self, integration_time, averages, cycles, repetitions):
         """Helper to apply new settings after measurement has stopped"""
