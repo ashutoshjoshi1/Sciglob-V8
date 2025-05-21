@@ -1,14 +1,17 @@
-import os
-import numpy as np
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QDateTime
 from PyQt5.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget, 
     QWidget, QVBoxLayout as QVBoxLayout2, QLabel, QSpinBox, QCheckBox
 )
 import pyqtgraph as pg
 from pyqtgraph import ViewBox
+import numpy as np
+import os
 
-from drivers.spectrometer import connect_spectrometer, AVS_MeasureCallback, AVS_MeasureCallbackFunc, AVS_GetScopeData, StopMeasureThread, prepare_measurement
+from drivers.spectrometer import (
+    connect_spectrometer, AVS_MeasureCallback, AVS_MeasureCallbackFunc, 
+    AVS_GetScopeData, StopMeasureThread, prepare_measurement, SpectrometerDriver
+)
 
 class SpectrometerController(QObject):
     status_signal = pyqtSignal(str)
@@ -175,6 +178,13 @@ class SpectrometerController(QObject):
 
         # Add downsampling for plots
         self.downsample_factor = 2  # Only plot every 2nd point
+
+        # Add new attributes
+        self.driver = SpectrometerDriver()
+        self.active_spectrometers = {}  # Track multiple spectrometers
+        self.watchdog_timer = QTimer()
+        self.watchdog_timer.timeout.connect(self._check_measurement_status)
+        self.watchdog_timer.start(1000)  # Check every second
 
     def connect(self):
         # Emit status for feedback
@@ -435,6 +445,113 @@ class SpectrometerController(QObject):
     #     """Automatically adjust integration time based on peak value and filter wheel position"""
     #     ...
 
+    def connect_spectrometer(self, ispec=0):
+        """Connect to a specific spectrometer by index"""
+        success, message = self.driver.reset(ispec, ini=True)
+        if success:
+            self.active_spectrometers[ispec] = True
+            self.status_signal.emit(message)
+            # Update UI elements
+            self.start_btn.setEnabled(True)
+            return True
+        else:
+            self.status_signal.emit(message)
+            return False
 
+    def disconnect_spectrometer(self, ispec=0, free_resources=False):
+        """Disconnect from a specific spectrometer"""
+        success, message = self.driver.disconnect(ispec, dofree=free_resources)
+        if success and ispec in self.active_spectrometers:
+            del self.active_spectrometers[ispec]
+        self.status_signal.emit(message)
+        return success
+
+    def set_integration_time(self, ispec=0, integration_time=50.0):
+        """Set integration time for a specific spectrometer"""
+        success, message = self.driver.set_it(ispec, integration_time)
+        self.status_signal.emit(message)
+        return success
+
+    def start_measurement(self, ispec=0, cycles=1):
+        """Start measurement on a specific spectrometer"""
+        if ispec not in self.active_spectrometers:
+            self.status_signal.emit(f"Spectrometer {ispec} not connected")
+            return False
+            
+        # Get integration time from UI
+        integration_time = float(self.integ_spinbox.value())
+        
+        # Set integration time
+        self.set_integration_time(ispec, integration_time)
+        
+        # Start measurement
+        success, message = self.driver.measure(ispec, ncy=cycles)
+        self.status_signal.emit(message)
+        
+        if success:
+            self.measure_active = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            self.apply_btn.setEnabled(True)
+        
+        return success
+
+    def stop_measurement(self, ispec=0):
+        """Stop measurement on a specific spectrometer"""
+        if ispec not in self.active_spectrometers:
+            return False
+            
+        if hasattr(self, 'measure_active') and self.measure_active:
+            self.measure_active = False
+            th = StopMeasureThread(self.driver.handles[ispec]['handle'], parent=self)
+            th.finished_signal.connect(self._on_stop)
+            th.start()
+            return True
+        return False
+
+    def get_temperature(self, ispec=0, board_temp=False):
+        """Get temperature from spectrometer"""
+        success, message, temp = self.driver.get_temp(ispec, syst8i=board_temp)
+        if success:
+            self.status_signal.emit(f"Temperature: {temp:.1f}°C")
+            return temp
+        else:
+            self.status_signal.emit(message)
+            return None
+
+    def _check_measurement_status(self):
+        """Watchdog function to check measurement status"""
+        for ispec in self.active_spectrometers:
+            if ispec in self.driver.data_status:
+                status = self.driver.data_status[ispec]
+                
+                if status == 'DATA_READY':
+                    # Process new data
+                    self._process_new_data(ispec)
+                    
+                elif status == 'ERROR':
+                    # Handle error condition
+                    error_level = self.driver.recovery_level.get(ispec, 0)
+                    self.status_signal.emit(f"Spectrometer {ispec} error (level {error_level})")
+
+    def _process_new_data(self, ispec):
+        """Process new data from spectrometer"""
+        if ispec in self.driver.handles and 'last_data' in self.driver.handles[ispec]:
+            data = self.driver.handles[ispec]['last_data']
+            wavelengths = self.driver.handles[ispec]['wavelengths']
+            
+            # Update the data for plotting
+            self.intens = data
+            
+            # Check for saturation
+            if self.driver.handles[ispec].get('saturated', False):
+                self.status_signal.emit("Warning: Detector saturation detected")
+                
+            # Reset data status to prevent reprocessing
+            self.driver.data_status[ispec] = 'PROCESSED'
+            
+            # Enable snapshot save and continuous save after data received
+            self.save_btn.setEnabled(True)
+            self.toggle_btn.setEnabled(True)
 
 

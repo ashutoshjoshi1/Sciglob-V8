@@ -20,8 +20,8 @@ from controllers.temp_controller import TempController
 from controllers.thp_controller import THPController
 
 class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Mini ROBOHyPO")
         
         # Get screen size and set window size proportionally
@@ -391,53 +391,41 @@ class MainWindow(QMainWindow):
         self._hardware_change_timer.setSingleShot(True)
         self._hardware_change_timer.timeout.connect(self._resume_after_hardware_change)
 
+        # Auto-connect spectrometer on startup
+        QTimer.singleShot(1000, self.auto_connect_spectrometer)
+
+    def auto_connect_spectrometer(self):
+        """Automatically connect to the spectrometer on startup"""
+        if hasattr(self, 'spec_ctrl') and self.spec_ctrl is not None:
+            self.statusBar().showMessage("Auto-connecting spectrometer...")
+            self.spec_ctrl.connect()
+
     def toggle_data_saving(self):
+        if not hasattr(self, 'continuous_saving'):
+            self.continuous_saving = False
+        
         if not self.continuous_saving:
-            if self.csv_file:
+            if hasattr(self, 'csv_file') and self.csv_file:
                 self.csv_file.close()
-            if self.log_file:
+            if hasattr(self, 'log_file') and self.log_file:
                 self.log_file.close()
             ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
-            
-            # Get current routine name if available
-            routine_name = getattr(self, 'current_routine_name', "Unknown")
-            
-            # Create folder structure: Routine Name/Date_Time/
-            routine_folder = os.path.join(self.csv_dir, routine_name)
-            date_time_folder = os.path.join(routine_folder, ts)
-            os.makedirs(routine_folder, exist_ok=True)
-            os.makedirs(date_time_folder, exist_ok=True)
-            
-            self.csv_file_path = os.path.join(date_time_folder, f"Scans_{routine_name}_{ts}.csv")
-            self.log_file_path = os.path.join(date_time_folder, f"log_{routine_name}_{ts}.txt")
-            
+            self.csv_file_path = os.path.join(self.csv_dir, f"Scans_{ts}_mini.csv")
+            self.log_file_path = os.path.join(self.log_dir, f"log_{ts}.txt")
             try:
                 self.csv_file = open(self.csv_file_path, "w", encoding="utf-8", newline="")
                 self.log_file = open(self.log_file_path, "w", encoding="utf-8")
             except Exception as e:
                 self.statusBar().showMessage(f"Cannot open files: {e}")
                 return
-            
-            # Add metadata header with routine information
-            self.csv_file.write(f"# Routine: {routine_name}\n")
-            
-            # Get cycles and repetitions
-            cycles = getattr(self, 'current_cycles', 1)
-            repetitions = getattr(self, 'current_repetitions', 1)
-            
-            self.csv_file.write(f"# Cycles: {cycles}\n")
-            self.csv_file.write(f"# Repetitions: {repetitions}\n")
-            self.csv_file.write(f"# Start Time: {ts}\n")
-            self.csv_file.write(f"# ----------------------------------------\n")
-            
             # Remove unwanted columns from headers
             headers = [
-                "Timestamp", "RoutineName", "Cycles", "Repetitions", "MotorAngle_deg", "FilterPos",
+                "Timestamp", "MotorAngle_deg", "FilterPos",
                 "Roll_deg", "Pitch_deg", "Yaw_deg", "AccelX_g", "AccelY_g", "AccelZ_g",
                 "MagX_uT", "MagY_uT", "MagZ_uT",
-                "Pressure_hPa", "Temperature_C", "TempCtrl_curr", "TempCtrl_set", "TempCtrl_aux",
+                "Pressure_hPa", "Temperature_C", "TempCtrl_curr", "TempCtrl_set",
                 "Latitude_deg", "Longitude_deg", "IntegrationTime_us",
-                "THP_Temp_C", "THP_Humidity_pct", "THP_Pressure_hPa", "RoutineCommand"
+                "THP_Temp_C", "THP_Humidity_pct", "THP_Pressure_hPa"
             ]
             headers += [f"Pixel_{i}" for i in range(len(self.spec_ctrl.intens))]
             self.csv_file.write(",".join(headers) + "\n")
@@ -484,9 +472,9 @@ class MainWindow(QMainWindow):
             self.save_data_timer.stop()
             if hasattr(self, 'collection_timer'):
                 self.collection_timer.stop()
-            if self.csv_file:
+            if hasattr(self, 'csv_file') and self.csv_file:
                 self.csv_file.close()
-            if self.log_file:
+            if hasattr(self, 'log_file') and self.log_file:
                 self.log_file.close()
             self.spec_ctrl.toggle_btn.setText("Start Saving")
             self.statusBar().showMessage("Saving stopped.")
@@ -494,7 +482,7 @@ class MainWindow(QMainWindow):
 
     def collect_data_sample(self):
         """Collect a data sample for averaging, with pause on hardware state changes"""
-        if not self.continuous_saving or not self.spec_ctrl.intens:
+        if not hasattr(self, 'continuous_saving') or not self.continuous_saving or not hasattr(self, 'spec_ctrl') or not hasattr(self.spec_ctrl, 'intens') or not self.spec_ctrl.intens:
             return
         
         # Check for hardware state changes
@@ -548,7 +536,7 @@ class MainWindow(QMainWindow):
 
     def save_continuous_data(self):
         """Average collected samples and save to CSV"""
-        if not (self.csv_file and self.log_file) or not self.continuous_saving:
+        if not hasattr(self, 'csv_file') or not hasattr(self, 'log_file') or not self.csv_file or not self.log_file or not hasattr(self, 'continuous_saving') or not self.continuous_saving:
             return
         
         # If hardware is changing, don't save data
@@ -564,9 +552,6 @@ class MainWindow(QMainWindow):
             now = QDateTime.currentDateTime()
             ts_csv = now.toString("yyyy-MM-dd hh:mm:ss.zzz")
             ts_txt = now.toString("yyyy-MM-dd hh:mm:ss")
-            
-            # Get current routine command if available
-            routine_command = getattr(self, 'current_routine_command', "")
             
             # Average the intensity data from all collected samples
             num_samples = len(self._data_collection)
@@ -598,21 +583,27 @@ class MainWindow(QMainWindow):
             if filter_pos is None:
                 filter_pos = getattr(self.filter_ctrl, "current_position", 0)
             
-            # Get IMU data
-            imu_data = self.get_imu_data()
-            r, p, y = imu_data['rpy']
-            ax, ay, az = imu_data['accel']
-            mx, my, mz = imu_data['mag']
+            # Get IMU data - use the latest data directly from the IMU controller
+            # The IMUController stores data in self.latest dictionary
+            r, p, y = self.imu_ctrl.latest['rpy']
             
-            pres = imu_data['pressure']
-            temp_env = imu_data['temperature']
-            lat = imu_data['latitude']
-            lon = imu_data['longitude']
+            # Check if accel, mag data exists in the latest dictionary
+            ax, ay, az = 0, 0, 0
+            if 'accel' in self.imu_ctrl.latest:
+                ax, ay, az = self.imu_ctrl.latest['accel']
+            
+            mx, my, mz = 0, 0, 0
+            if 'mag' in self.imu_ctrl.latest:
+                mx, my, mz = self.imu_ctrl.latest['mag']
+            
+            pres = self.imu_ctrl.latest['pressure']
+            temp_env = self.imu_ctrl.latest['temperature']
+            lat = self.imu_ctrl.latest['latitude']
+            lon = self.imu_ctrl.latest['longitude']
             
             # Get temperature controller data
             tc_curr = self.temp_ctrl.current_temp
             tc_set = self.temp_ctrl.setpoint
-            tc_aux = self.temp_ctrl.auxiliary_temp
             
             # Get integration time
             integ_us = self.spec_ctrl.current_integration_time_us
@@ -623,20 +614,14 @@ class MainWindow(QMainWindow):
             thp_hum = thp.get("humidity", 0)
             thp_pres = thp.get("pressure", 0)
             
-            # Get current routine info
-            routine_name = getattr(self, 'current_routine_name', "Unknown")
-            cycles = getattr(self, 'current_cycles', 1)
-            repetitions = getattr(self, 'current_repetitions', 1)
-            
-            # Create CSV row with routine information
+            # Create CSV row
             row = [
-                ts_csv, routine_name, str(cycles), str(repetitions),
-                str(motor_angle), str(filter_pos),
+                ts_csv, str(motor_angle), str(filter_pos),
                 f"{r:.2f}", f"{p:.2f}", f"{y:.2f}", f"{ax:.2f}", f"{ay:.2f}", f"{az:.2f}",
                 f"{mx:.2f}", f"{my:.2f}", f"{mz:.2f}",
-                f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}", f"{tc_aux:.2f}",
+                f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}",
                 f"{lat:.6f}", f"{lon:.6f}", str(integ_us), f"{thp_temp:.2f}",
-                f"{thp_hum:.2f}", f"{thp_pres:.2f}", routine_command
+                f"{thp_hum:.2f}", f"{thp_pres:.2f}"
             ]
             
             # Add averaged intensity values
@@ -724,12 +709,38 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close event"""
+        # Stop spectrometer if active
+        if hasattr(self, 'spec_ctrl') and self.spec_ctrl is not None:
+            try:
+                if hasattr(self.spec_ctrl, 'measure_active') and self.spec_ctrl.measure_active:
+                    self.statusBar().showMessage("Stopping spectrometer before exit...")
+                    self.spec_ctrl.stop()
+                    # Wait briefly for the spectrometer to stop
+                    QTimer.singleShot(500, lambda: self.cleanup_and_close(event))
+                    event.ignore()  # Temporarily ignore the close event
+                    return
+            except Exception as e:
+                print(f"Error stopping spectrometer: {e}")
+        
+        self.cleanup_and_close(event)
+
+    def cleanup_and_close(self, event):
+        """Clean up resources and close the application"""
+        # Clean up resources
+        if hasattr(self, 'continuous_saving') and self.continuous_saving:
+            self.toggle_data_saving()
+        
+        if hasattr(self, 'csv_file') and self.csv_file:
+            self.csv_file.close()
+        if hasattr(self, 'log_file') and self.log_file:
+            self.log_file.close()
+        
         # Release camera resources if initialized
         if hasattr(self, 'camera') and self.camera.isOpened():
             self.camera.release()
         
         # Call the parent class closeEvent
-        super().closeEvent(event)
+        event.accept()
 
     def load_routine_file(self):
         """Load a custom routine code file for automated hardware control"""
@@ -796,6 +807,9 @@ class MainWindow(QMainWindow):
         self.routine_status.setText("Running routine...")
         self.run_routine_btn.setEnabled(False)
         
+        # Set flag to indicate routine is running
+        self.routine_running = True
+        
         # Create a timer to execute commands sequentially
         self.routine_index = 0
         self.current_routine_command = ""  # Initialize current command
@@ -811,10 +825,18 @@ class MainWindow(QMainWindow):
             self.routine_status.setText("Routine execution completed")
             self.run_routine_btn.setEnabled(True)
             self.statusBar().showMessage("Routine execution completed")
+            
+            # Set routine as no longer running
+            self.routine_running = False
+            
+            # Stop continuous data saving when routine completes
+            if hasattr(self, 'continuous_saving') and self.continuous_saving:
+                self.toggle_data_saving()
+            
             return
         
         # Get the current command
-        command = self.routine_commands[self.routine_index]
+        command = self.routine_commands[self.routine_index].strip()
         self.current_routine_command = command  # Store current command for data logging
         self.routine_index += 1
         
@@ -823,64 +845,73 @@ class MainWindow(QMainWindow):
         
         try:
             # Parse and execute the command
-            parts = command.split()
-            if not parts:
-                pass  # Empty command
-            elif parts[0].lower() == "motor":
-                # Example: motor move 1000
-                if len(parts) >= 3 and parts[1].lower() == "move":
-                    self.motor_ctrl.move_to(int(parts[2]))
-            elif parts[0].lower() == "filter":
-                # Example: filter position 3
-                if len(parts) >= 3 and parts[1].lower() == "position":
-                    self.filter_ctrl.set_position(int(parts[2]))
-            elif parts[0].lower() == "spectrometer":
-                # Example: spectrometer start
-                if len(parts) >= 2:
-                    if parts[1].lower() == "start":
-                        self.spec_ctrl.start()
-                    elif parts[1].lower() == "stop":
-                        self.spec_ctrl.stop()
-                    elif parts[1].lower() == "save":
-                        self.spec_ctrl.save()
-            elif parts[0].lower() == "wait":
-                # Example: wait 5000 (wait for 5 seconds)
-                if len(parts) >= 2:
-                    try:
-                        wait_ms = int(parts[1])
-                        # Adjust timer interval for this wait
-                        self.routine_timer.setInterval(wait_ms)
-                        # Return without scheduling next command
-                        return
-                    except ValueError:
-                        self.statusBar().showMessage(f"Invalid wait time: {parts[1]}")
-            elif parts[0].lower() == "log":
-                # Example: log This is a message
-                if len(parts) >= 2:
-                    message = " ".join(parts[1:])
-                    self.statusBar().showMessage(message)
-                    # Also log to file if logging is enabled
-                    if hasattr(self, 'log_file') and self.log_file:
-                        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                        self.log_file.write(f"{timestamp} - {message}\n")
-                        self.log_file.flush()
-            elif parts[0].lower() == "temp":
-                # Example: temp setpoint 25.5
-                if len(parts) >= 3 and parts[1].lower() == "setpoint":
-                    try:
-                        setpoint = float(parts[2])
-                        if hasattr(self, 'temp_ctrl'):
-                            self.temp_ctrl.set_setpoint(setpoint)
-                    except ValueError:
-                        self.statusBar().showMessage(f"Invalid temperature: {parts[2]}")
+            if command.startswith('#') or not command:
+                # Comment or empty line, skip to next command immediately
+                self.routine_timer.setInterval(10)  # Very short interval to next command
+            elif command.startswith('wait'):
+                # Wait command
+                parts = command.split()
+                if len(parts) > 1:
+                    wait_time = int(parts[1])
+                    self.routine_timer.setInterval(wait_time)
+                    self.statusBar().showMessage(f"Waiting {wait_time}ms...")
+            elif command.startswith('log'):
+                # Log message
+                message = command[4:].strip()
+                self.handle_status_message(message)
+                self.routine_timer.setInterval(100)  # Short interval to next command
+            elif command.startswith('motor move'):
+                # Motor movement command
+                parts = command.split()
+                if len(parts) > 2:
+                    angle = float(parts[2])
+                    self._hardware_changing = True
+                    self.motor_ctrl.move_to(angle)
+                    self.routine_timer.setInterval(500)  # Give time for motor to start moving
+            elif command.startswith('filter position'):
+                # Filter wheel command
+                parts = command.split()
+                if len(parts) > 2:
+                    position = int(parts[2])
+                    self._hardware_changing = True
+                    self.filter_ctrl.move_to(position)
+                    self.routine_timer.setInterval(500)  # Give time for filter to start moving
+            elif command.startswith('spectrometer start'):
+                # Start spectrometer command
+                self.spec_ctrl.start()
+                
+                # Start data saving if not already active
+                if not hasattr(self, 'continuous_saving') or not self.continuous_saving:
+                    self.toggle_data_saving()
+                    
+                self.routine_timer.setInterval(500)
+            elif command.startswith('spectrometer stop'):
+                # Stop spectrometer command
+                self.spec_ctrl.stop()
+                
+                # Stop data saving if active
+                if hasattr(self, 'continuous_saving') and self.continuous_saving:
+                    self.toggle_data_saving()
+                    
+                self.routine_timer.setInterval(500)
+            elif command.startswith('spectrometer save'):
+                # Save spectrometer data command
+                self.spec_ctrl.save()
+                self.routine_timer.setInterval(500)
+            elif command.startswith('temp setpoint'):
+                # Temperature controller command
+                parts = command.split()
+                if len(parts) > 2:
+                    setpoint = float(parts[2])
+                    self.temp_ctrl.set_setpoint(setpoint)
+                self.routine_timer.setInterval(500)
             else:
+                # Unknown command
                 self.statusBar().showMessage(f"Unknown command: {command}")
-        
+                self.routine_timer.setInterval(500)
         except Exception as e:
-            self.statusBar().showMessage(f"Error executing command: {e}")
-        
-        # Reset timer interval to default for next command
-        self.routine_timer.setInterval(100)
+            self.statusBar().showMessage(f"Command error: {e}")
+            self.routine_timer.setInterval(500)
 
     def update_camera_feed(self):
         """Update the camera feed display with optimized performance and error handling"""
@@ -1075,10 +1106,11 @@ class MainWindow(QMainWindow):
 
     # Add method to resume data collection after hardware change
     def _resume_after_hardware_change(self):
-        """Resume data collection after hardware state change pause"""
-        self._hardware_changing = False
-        self.statusBar().showMessage("Resuming data collection after hardware change")
-        self.handle_status_message("Resuming data collection")
+        """Resume data collection after hardware change pause"""
+        if hasattr(self, '_hardware_changing'):
+            self._hardware_changing = False
+            self.statusBar().showMessage("Resuming data collection after hardware change")
+            self.handle_status_message("Resuming data collection")
         
         # Clear any existing data samples to ensure we only get fresh data
         if hasattr(self, '_data_collection'):
@@ -1226,12 +1258,6 @@ class MainWindow(QMainWindow):
         
         except Exception as e:
             self.statusBar().showMessage(f"Error creating preset schedule file: {e}")
-
-
-
-
-
-
 
 
 
