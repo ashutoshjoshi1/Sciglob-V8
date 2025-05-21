@@ -97,7 +97,7 @@ class DataLogger(QObject):
             "MagX_uT", "MagY_uT", "MagZ_uT",
             "Pressure_hPa", "TempEnv_C", "TempCurr_C", "TempSet_C",
             "Latitude", "Longitude", "IntegTime_us", "THPTemp_C",
-            "THPHum_pct", "THPPres_hPa"
+            "THPHum_pct", "THPPres_hPa", "Spec_temp_C", "RoutineCode"
         ]
         
         # Add pixel headers if spectrometer data is available
@@ -123,6 +123,54 @@ class DataLogger(QObject):
         # Add to collection
         self._data_collection.append(sample)
     
+    def _debug_controller_values(self):
+        """Debug method to print current controller values"""
+        debug_info = []
+        
+        # Motor controller debug
+        if hasattr(self.main_window, 'motor_ctrl') and self.main_window.motor_ctrl is not None:
+            motor_info = "Motor: "
+            if hasattr(self.main_window.motor_ctrl, 'current_angle'):
+                motor_info += f"current_angle={self.main_window.motor_ctrl.current_angle}"
+            else:
+                motor_info += "current_angle=None"
+            debug_info.append(motor_info)
+        
+        # IMU controller debug
+        if hasattr(self.main_window, 'imu_ctrl') and self.main_window.imu_ctrl is not None:
+            imu_info = "IMU: "
+            if hasattr(self.main_window.imu_ctrl, 'data_dict'):
+                imu_info += f"data_dict={self.main_window.imu_ctrl.data_dict}"
+            else:
+                imu_info += "data_dict=None"
+            
+            if hasattr(self.main_window.imu_ctrl, 'latest_data'):
+                imu_info += f", latest_data={self.main_window.imu_ctrl.latest_data}"
+            else:
+                imu_info += ", latest_data=None"
+            debug_info.append(imu_info)
+        
+        # THP controller debug
+        if hasattr(self.main_window, 'thp_ctrl') and self.main_window.thp_ctrl is not None:
+            thp_info = "THP: "
+            if hasattr(self.main_window.thp_ctrl, 'latest'):
+                thp_info += f"latest={self.main_window.thp_ctrl.latest}"
+            else:
+                thp_info += "latest=None"
+            
+            if hasattr(self.main_window.thp_ctrl, 'get_latest'):
+                try:
+                    thp_info += f", get_latest()={self.main_window.thp_ctrl.get_latest()}"
+                except:
+                    thp_info += ", get_latest()=Error"
+            debug_info.append(thp_info)
+        
+        # Print debug info
+        # print("\n".join(debug_info))
+        
+        # Also log to status
+        self.status_signal.emit("Debug info printed to console")
+
     def save_continuous_data(self):
         """Average collected samples and save to CSV"""
         if not hasattr(self, 'csv_file') or not self.csv_file or not hasattr(self, 'continuous_saving') or not self.continuous_saving:
@@ -132,6 +180,15 @@ class DataLogger(QObject):
         if (hasattr(self.main_window, '_hardware_changing') and self.main_window._hardware_changing) or \
            (hasattr(self.main_window, '_integration_changing') and self.main_window._integration_changing):
             return
+        
+        # Debug controller values occasionally (every 10th save)
+        if hasattr(self, '_debug_counter'):
+            self._debug_counter += 1
+            if self._debug_counter >= 10:
+                self._debug_counter = 0
+                self._debug_controller_values()
+        else:
+            self._debug_counter = 0
             
         try:
             # Process collected data
@@ -210,43 +267,134 @@ class DataLogger(QObject):
         lat, lon = 0, 0
         integ_us = 0
         thp_temp, thp_hum, thp_pres = 0, 0, 0
+        spec_temp = 0
+        routine_code = "XX"
         
-        # Get values from controllers if available
-        if hasattr(self.main_window, 'motor_ctrl'):
-            motor_angle = self.main_window.motor_ctrl.current_angle if hasattr(self.main_window.motor_ctrl, 'current_angle') else 0
+        # Get motor angle - fix for MotorAngle_deg
+        if hasattr(self.main_window, 'motor_ctrl') and self.main_window.motor_ctrl is not None:
+            # Try different attribute names that might contain the angle
+            if hasattr(self.main_window.motor_ctrl, 'current_angle_deg'):
+                motor_angle = self.main_window.motor_ctrl.current_angle_deg
+            elif hasattr(self.main_window.motor_ctrl, 'current_angle'):
+                motor_angle = self.main_window.motor_ctrl.current_angle
+            elif hasattr(self.main_window.motor_ctrl, 'angle'):
+                motor_angle = self.main_window.motor_ctrl.angle
+            elif hasattr(self.main_window.motor_ctrl, 'position'):
+                motor_angle = self.main_window.motor_ctrl.position
+            # Try to get from the UI if available
+            elif hasattr(self.main_window.motor_ctrl, 'angle_input'):
+                try:
+                    motor_angle = float(self.main_window.motor_ctrl.angle_input.text().strip())
+                except (ValueError, AttributeError):
+                    pass
+            elif hasattr(self.main_window.motor_ctrl, 'angle_display'):
+                try:
+                    motor_angle = float(self.main_window.motor_ctrl.angle_display.text().replace('°', ''))
+                except (ValueError, AttributeError):
+                    pass
+        
+        # Get IMU data - fix for Roll, Pitch, Yaw, Accel, Mag, Pressure
+        if hasattr(self.main_window, 'imu_ctrl') and self.main_window.imu_ctrl is not None:
+            # Try to get data from the latest attribute
+            if hasattr(self.main_window.imu_ctrl, 'latest'):
+                imu_data = self.main_window.imu_ctrl.latest
+                if imu_data:
+                    r = imu_data.get('rpy', [0, 0, 0])[0] if 'rpy' in imu_data else imu_data.get('roll', r)
+                    p = imu_data.get('rpy', [0, 0, 0])[1] if 'rpy' in imu_data else imu_data.get('pitch', p)
+                    y = imu_data.get('rpy', [0, 0, 0])[2] if 'rpy' in imu_data else imu_data.get('yaw', y)
+                    
+                    if 'accel' in imu_data and isinstance(imu_data['accel'], (list, tuple)) and len(imu_data['accel']) >= 3:
+                        ax, ay, az = imu_data['accel']
+                    else:
+                        ax = imu_data.get('accel_x', ax)
+                        ay = imu_data.get('accel_y', ay)
+                        az = imu_data.get('accel_z', az)
+                    
+                    if 'mag' in imu_data and isinstance(imu_data['mag'], (list, tuple)) and len(imu_data['mag']) >= 3:
+                        mx, my, mz = imu_data['mag']
+                    else:
+                        mx = imu_data.get('mag_x', mx)
+                        my = imu_data.get('mag_y', my)
+                        mz = imu_data.get('mag_z', mz)
+                    
+                    pres = imu_data.get('pressure', pres)
+                    temp_env = imu_data.get('temperature', temp_env)
             
-        if hasattr(self.main_window, 'filter_ctrl'):
-            filter_pos = self.main_window.filter_ctrl.current_position if hasattr(self.main_window.filter_ctrl, 'current_position') else 0
+            # Try to get data from the data_label if available
+            if (r == 0 or p == 0 or y == 0) and hasattr(self.main_window.imu_ctrl, 'data_label'):
+                try:
+                    # Try to parse the HTML table in data_label
+                    from PyQt5.QtCore import Qt
+                    text = self.main_window.imu_ctrl.data_label.text()
+                    if "Roll:" in text and "°" in text:
+                        import re
+                        # Extract roll, pitch, yaw values
+                        roll_match = re.search(r'Roll:</b></td><td align=\'left\'>([+-]?\d+\.?\d*)°', text)
+                        pitch_match = re.search(r'Pitch:</b></td><td align=\'left\'>([+-]?\d+\.?\d*)°', text)
+                        yaw_match = re.search(r'Yaw:</b></td><td align=\'left\'>([+-]?\d+\.?\d*)°', text)
+                        
+                        if roll_match:
+                            r = float(roll_match.group(1))
+                        if pitch_match:
+                            p = float(pitch_match.group(1))
+                        if yaw_match:
+                            y = float(yaw_match.group(1))
+                except Exception as e:
+                    print(f"Error parsing IMU data from label: {e}")
+        
+        # Get THP sensor data - fix for THPTemp, THPHum, THPPres
+        if hasattr(self.main_window, 'thp_ctrl') and self.main_window.thp_ctrl is not None:
+            # Try different methods to get THP data
+            if hasattr(self.main_window.thp_ctrl, 'get_latest'):
+                thp_data = self.main_window.thp_ctrl.get_latest()
+                if thp_data:
+                    thp_temp = thp_data.get('temperature', thp_temp)
+                    thp_hum = thp_data.get('humidity', thp_hum)
+                    thp_pres = thp_data.get('pressure', thp_pres)
             
-        if hasattr(self.main_window, 'imu_ctrl'):
-            if hasattr(self.main_window.imu_ctrl, 'latest_data'):
-                imu_data = self.main_window.imu_ctrl.latest_data
-                r = imu_data.get('roll', 0)
-                p = imu_data.get('pitch', 0)
-                y = imu_data.get('yaw', 0)
-                ax = imu_data.get('accel_x', 0)
-                ay = imu_data.get('accel_y', 0)
-                az = imu_data.get('accel_z', 0)
-                mx = imu_data.get('mag_x', 0)
-                my = imu_data.get('mag_y', 0)
-                mz = imu_data.get('mag_z', 0)
-                pres = imu_data.get('pressure', 0)
-                temp_env = imu_data.get('temperature', 0)
-                
-        if hasattr(self.main_window, 'temp_ctrl'):
-            tc_curr = self.main_window.temp_ctrl.current_temp if hasattr(self.main_window.temp_ctrl, 'current_temp') else 0
-            tc_set = self.main_window.temp_ctrl.setpoint if hasattr(self.main_window.temp_ctrl, 'setpoint') else 0
+            # Try direct attribute access
+            if hasattr(self.main_window.thp_ctrl, 'latest'):
+                thp_data = self.main_window.thp_ctrl.latest
+                if thp_data:
+                    thp_temp = thp_data.get('temperature', thp_temp)
+                    thp_hum = thp_data.get('humidity', thp_hum)
+                    thp_pres = thp_data.get('pressure', thp_pres)
             
-        if hasattr(self.main_window, 'spec_ctrl'):
-            integ_us = self.main_window.spec_ctrl.current_integration_time_us if hasattr(self.main_window.spec_ctrl, 'current_integration_time_us') else 0
-            
-        if hasattr(self.main_window, 'thp_ctrl'):
-            if hasattr(self.main_window.thp_ctrl, 'latest_data'):
-                thp_data = self.main_window.thp_ctrl.latest_data
-                thp_temp = thp_data.get('temperature', 0)
-                thp_hum = thp_data.get('humidity', 0)
-                thp_pres = thp_data.get('pressure', 0)
-                
+            # Try to get from UI elements if available
+            if thp_temp == 0 and hasattr(self.main_window.thp_ctrl, 'temp_display'):
+                try:
+                    thp_temp = float(self.main_window.thp_ctrl.temp_display.text().replace('°C', ''))
+                except (ValueError, AttributeError):
+                    pass
+        
+        if hasattr(self.main_window, 'filter_ctrl') and self.main_window.filter_ctrl is not None:
+            if hasattr(self.main_window.filter_ctrl, 'current_position'):
+                filter_pos = self.main_window.filter_ctrl.current_position
+        
+        if hasattr(self.main_window, 'temp_ctrl') and self.main_window.temp_ctrl is not None:
+            if hasattr(self.main_window.temp_ctrl, 'current_temp'):
+                tc_curr = self.main_window.temp_ctrl.current_temp
+            if hasattr(self.main_window.temp_ctrl, 'setpoint'):
+                tc_set = self.main_window.temp_ctrl.setpoint
+            # New: Get auxiliary temperature (spectrometer temperature)
+            if hasattr(self.main_window.temp_ctrl, 'auxiliary_temp'):
+                spec_temp = self.main_window.temp_ctrl.auxiliary_temp
+        
+        if hasattr(self.main_window, 'spec_ctrl') and self.main_window.spec_ctrl is not None:
+            if hasattr(self.main_window.spec_ctrl, 'current_integration_time_us'):
+                integ_us = self.main_window.spec_ctrl.current_integration_time_us
+        
+        # New: Get routine code if a routine is running
+        if hasattr(self.main_window, 'routine_manager') and self.main_window.routine_manager is not None:
+            if hasattr(self.main_window.routine_manager, 'current_routine'):
+                current_routine = self.main_window.routine_manager.current_routine
+                if current_routine:
+                    # Extract first two characters of routine name
+                    routine_name = os.path.basename(current_routine)
+                    if routine_name.endswith('.txt'):
+                        routine_name = routine_name[:-4]  # Remove .txt extension
+                    routine_code = routine_name[:2].upper() if len(routine_name) >= 2 else routine_name.upper()
+        
         # Create CSV row
         row = [
             ts_csv, str(motor_angle), str(filter_pos),
@@ -254,7 +402,7 @@ class DataLogger(QObject):
             f"{mx:.2f}", f"{my:.2f}", f"{mz:.2f}",
             f"{pres:.2f}", f"{temp_env:.2f}", f"{tc_curr:.2f}", f"{tc_set:.2f}",
             f"{lat:.6f}", f"{lon:.6f}", str(integ_us), f"{thp_temp:.2f}",
-            f"{thp_hum:.2f}", f"{thp_pres:.2f}"
+            f"{thp_hum:.2f}", f"{thp_pres:.2f}", f"{spec_temp:.2f}", routine_code
         ]
         
         # Add averaged intensity values

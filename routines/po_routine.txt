@@ -1,9 +1,9 @@
-# PO Schedule - Position and Optics Test
-# Created for testing motor positions and filter wheel positions
+# PO Routine - Position and Optics Test
+# Cycles through different motor positions and filter wheel positions
 # Commands run sequentially with wait times in milliseconds
 
 # Start with a log message
-log Starting PO Schedule - Position and Optics Test
+log Starting PO Routine - Position and Optics Test
 
 # Start data saving
 log Starting data saving
@@ -68,5 +68,5 @@ log Stopping data saving
 data stop
 wait 1000
 
-# Complete the schedule
-log PO Schedule completed
+# Complete the routine
+log PO Routine completed

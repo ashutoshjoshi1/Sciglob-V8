@@ -102,17 +102,35 @@ class MotorController(QObject):
         """Move to the specified angle"""
         if not self._connected:
             self.status_signal.emit("Motor not connected")
-            return
+            return False
         
-        ok = False
-        if self.serial:
+        try:
+            # First update the angle input field
+            if hasattr(self, 'angle_input'):
+                self.angle_input.setText(str(angle))
+            
             # Convert angle to motor steps (100 steps per degree)
-            motor_angle = angle * 100
-            ok = send_move_command(self.serial, motor_angle)
-            if ok:
-                # Update the current angle attribute when move is successful
-                self.current_angle_deg = angle
-        self.status_signal.emit(f"Moved to {angle}°" if ok else "No ACK")
+            motor_angle = int(angle * 100)
+            
+            # Send the command
+            ok = False
+            if self.serial:
+                ok = send_move_command(self.serial, motor_angle)
+                
+                if ok:
+                    # Update the current angle attribute when move is successful
+                    self.current_angle = angle
+                    self.current_angle_deg = angle
+                    self.status_signal.emit(f"Moved to {angle}°")
+                else:
+                    self.status_signal.emit(f"Failed to move to {angle}° (No ACK)")
+            else:
+                self.status_signal.emit("Serial connection not available")
+            
+            return ok
+        except Exception as e:
+            self.status_signal.emit(f"Error moving motor: {str(e)}")
+            return False
 
     def is_connected(self):
         return self._connected

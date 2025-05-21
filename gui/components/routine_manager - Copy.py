@@ -80,30 +80,6 @@ class ResultsPlotDialog(QDialog):
         self.canvas.draw()
         
         print("Plot completed and canvas updated")
-        
-    def closeEvent(self, event):
-        """Handle dialog close event - save the plot"""
-        try:
-            # Create diagrams directory if it doesn't exist
-            diagrams_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "diagrams")
-            os.makedirs(diagrams_dir, exist_ok=True)
-            
-            # Create a timestamp for the filename
-            ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
-            filename = os.path.join(diagrams_dir, f"po_routine_plot_{ts}.png")
-            
-            # Save the figure
-            self.figure.savefig(filename, dpi=300, bbox_inches='tight')
-            print(f"Plot saved to {filename}")
-            
-            # Close all matplotlib figures to prevent memory leaks
-            plt.close(self.figure)
-            plt.close('all')
-        except Exception as e:
-            print(f"Error saving plot: {e}")
-        
-        # Call the parent class closeEvent
-        super().closeEvent(event)
 
 class RoutineManager(QObject):
     status_signal = pyqtSignal(str)
@@ -258,12 +234,6 @@ class RoutineManager(QObject):
             self.stop_routine()
             return
         
-        # Reset plot creation flag when starting a new routine
-        self._plot_created = False
-        
-        # Reset completion flag
-        self._completion_in_progress = False
-        
         # Start the routine
         self.routine_running = True
         self.current_command_index = 0
@@ -272,11 +242,16 @@ class RoutineManager(QObject):
         if hasattr(self.main_window, 'routine_status'):
             self.main_window.routine_status.setText(f"Running command 1/{len(self.routine_commands)}")
         
+        # Start continuous data saving if not already active
+        if hasattr(self.main_window, 'data_logger') and hasattr(self.main_window.data_logger, 'continuous_saving'):
+            if not self.main_window.data_logger.continuous_saving:
+                self.data_saving_started_by_routine = True
+                self.main_window.toggle_data_saving()
+                self.main_window.statusBar().showMessage("Started continuous data saving for routine")
+        
         # Execute the first command
         self._execute_next_command()
-        
-        self.main_window.statusBar().showMessage(f"Started routine")
-
+    
     def stop_routine(self):
         """Stop the currently running routine"""
         self.routine_running = False
@@ -339,18 +314,12 @@ class RoutineManager(QObject):
                     self.main_window.toggle_data_saving()
             self.data_saving_started_by_routine = False
         
-        # Process the data and create the plot - only do this once
-        if not hasattr(self, '_plot_created') or not self._plot_created:
-            self.main_window.statusBar().showMessage("Processing routine data for plotting...")
-            print("Routine completed, processing data for plotting...")
-            
-            # Set flag to indicate we're creating the plot
-            self._plot_created = True
-            
-            # Add a small delay to ensure data is saved before processing
-            QTimer.singleShot(1000, self._process_and_plot_routine_data)
-        else:
-            print("Plot already created for this routine, skipping")
+        # Process the data and create the plot
+        self.main_window.statusBar().showMessage("Processing routine data for plotting...")
+        print("Routine completed, processing data for plotting...")
+        
+        # Add a small delay to ensure data is saved before processing
+        QTimer.singleShot(1000, self._process_and_plot_routine_data)
         
         # Enable the start button
         if hasattr(self.main_window, 'run_routine_btn'):
@@ -370,9 +339,7 @@ class RoutineManager(QObject):
                 print("Plot dialog already open, skipping duplicate processing")
                 return
             
-            # Set flag to prevent multiple dialogs
             self._plot_dialog_open = True
-            
             self.main_window.statusBar().showMessage("Starting data processing...")
             
             # Find the most recent CSV file in the data directory
@@ -489,15 +456,14 @@ class RoutineManager(QObject):
             # Create pixel indices
             pixel_indices = np.arange(len(intensity_cols))
             
-            # Create and show the plot dialog - ONLY ONCE
+            # Create and show the plot dialog
             self.main_window.statusBar().showMessage("Creating plot dialog...")
             plot_dialog = ResultsPlotDialog("PO Routine Results", self.main_window)
             plot_dialog.plot_data(data_dict, pixel_indices)
             
             # Connect the dialog's close event to reset the flag
-            plot_dialog.finished.connect(self._on_plot_dialog_closed)
+            plot_dialog.finished.connect(lambda: setattr(self, '_plot_dialog_open', False))
             
-            # Show the dialog
             plot_dialog.show()
             
             # Also update the spectrometer plot if available
@@ -536,13 +502,6 @@ class RoutineManager(QObject):
             print(f"Error processing routine data: {str(e)}")
             print(traceback.format_exc())
             self._plot_dialog_open = False
-
-    def _on_plot_dialog_closed(self):
-        """Handle plot dialog closed event"""
-        print("Plot dialog closed")
-        self._plot_dialog_open = False
-        # Don't reset _plot_created flag here, as we want to prevent creating another plot
-        # for this routine run
 
     def _execute_command(self, command):
         """Execute a single command from the routine"""

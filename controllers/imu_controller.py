@@ -105,6 +105,11 @@ class IMUController(QObject):
         t = self.latest['temperature']
         pres = self.latest['pressure']
         
+        # Make sure data is also available as individual components for data logger
+        self.latest['roll'] = r
+        self.latest['pitch'] = p
+        self.latest['yaw'] = y
+        
         # Format the data with larger text and better formatting
         self.data_label.setText(
             f"<table width='100%' cellspacing='5'>"
