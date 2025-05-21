@@ -18,7 +18,7 @@ CMD_DESIRED_CONTROL_VALUE   = "03"   # read effective set‑point
 CMD_SET_TYPE_DEFINE         = "29"   # write 0 → computer‑set value  :contentReference[oaicite:4]{index=4}&#8203;:contentReference[oaicite:5]{index=5}
 CMD_FIXED_DESIRED_SETTING   = "1c"   # write / read fixed set‑point   :contentReference[oaicite:6]{index=6}&#8203;:contentReference[oaicite:7]{index=7}
 CMD_POWER_ON_OFF            = "2d"   # write 1=on, 0=off            :contentReference[oaicite:8]{index=8}&#8203;:contentReference[oaicite:9]{index=9}
-CMD_INPUT2                  = "02"   # read auxiliary temperature
+CMD_INPUT2                  = "06"   # read auxiliary temperature
 
 class TC36_25:
     """
