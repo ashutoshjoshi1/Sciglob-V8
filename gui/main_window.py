@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         # Add flag to prevent overlapping updates
         self._updating = False
         self._hardware_changing = False
+        self._integration_changing = False
         
         # Initialize UI manager
         self.ui_manager = UIManager(self)
@@ -265,7 +266,7 @@ class MainWindow(QMainWindow):
             self.data_timer.start(collection_interval)
             
             # Start data saving timer - save at integration time rate plus a small buffer
-            save_interval = integration_time_ms + 200  # Add 200ms buffer for processing
+            save_interval = int(integration_time_ms + 200)  # Add 200ms buffer for processing
             self.save_timer = QTimer(self)
             self.save_timer.timeout.connect(self.data_logger.save_continuous_data)
             self.save_timer.start(save_interval)

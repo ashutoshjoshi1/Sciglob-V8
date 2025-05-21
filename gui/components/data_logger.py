@@ -128,8 +128,9 @@ class DataLogger(QObject):
         if not hasattr(self, 'csv_file') or not self.csv_file or not hasattr(self, 'continuous_saving') or not self.continuous_saving:
             return
         
-        # If hardware is changing, don't save data
-        if hasattr(self.main_window, '_hardware_changing') and self.main_window._hardware_changing:
+        # If hardware is changing or integration time is being adjusted, don't save data
+        if (hasattr(self.main_window, '_hardware_changing') and self.main_window._hardware_changing) or \
+           (hasattr(self.main_window, '_integration_changing') and self.main_window._integration_changing):
             return
             
         try:

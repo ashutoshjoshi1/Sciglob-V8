@@ -18,6 +18,9 @@ class SpectrometerController(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Store parent reference properly
+        self.parent = parent
+        
         # Group box UI
         self.groupbox = QGroupBox("Spectrometer")
         self.groupbox.setObjectName("spectrometerGroup")
@@ -406,8 +409,8 @@ class SpectrometerController(QObject):
             if hasattr(self.parent, 'data_logger') and hasattr(self.parent.data_logger, 'continuous_saving'):
                 if self.parent.data_logger.continuous_saving:
                     # Ensure minimum interval of 100ms
-                    collection_interval = max(100, integration_time_ms)
-                    save_interval = integration_time_ms + 200  # Add 200ms buffer
+                    collection_interval = max(100, int(integration_time_ms))
+                    save_interval = int(integration_time_ms + 200)  # Add 200ms buffer
                     
                     # Update the timers if they exist
                     if hasattr(self.parent, 'data_timer'):
@@ -423,11 +426,23 @@ class SpectrometerController(QObject):
 
     def _apply_new_settings(self, integration_time, averages, cycles, repetitions):
         """Helper to apply new settings after measurement has stopped"""
+        # Set flag to indicate integration time is changing
+        if hasattr(self, 'parent') and self.parent is not None:
+            # Check if parent is actually an object and not a method
+            if not callable(self.parent):  # Check if parent is not a method
+                if not hasattr(self.parent, '_integration_changing'):
+                    setattr(self.parent, '_integration_changing', True)
+                else:
+                    self.parent._integration_changing = True
+            else:
+                # Log the issue for debugging
+                print("Warning: parent is a callable, not an object")
+        
         code = prepare_measurement(self.handle, self.npix, 
-                                  integration_time_ms=integration_time, 
-                                  averages=averages,
-                                  cycles=cycles,
-                                  repetitions=repetitions)
+                                integration_time_ms=integration_time, 
+                                averages=averages,
+                                cycles=cycles,
+                                repetitions=repetitions)
         if code != 0:
             self.status_signal.emit(f"Settings update error: {code}")
             return
@@ -442,6 +457,14 @@ class SpectrometerController(QObject):
         self.measure_active = True
         self.stop_btn.setEnabled(True)
         self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
+        
+        # Add a delay before resetting the flag to ensure stable readings
+        if hasattr(self, 'parent') and self.parent is not None and not callable(self.parent):
+            if hasattr(self.parent, '_integration_changing'):
+                # Convert integration_time to integer for QTimer.singleShot
+                delay_ms = int(integration_time * 2)
+                QTimer.singleShot(delay_ms, 
+                                 lambda: setattr(self.parent, '_integration_changing', False))
 
     def connect_spectrometer(self, ispec=0):
         """Connect to a specific spectrometer by index"""
