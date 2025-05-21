@@ -1,7 +1,7 @@
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QDateTime
 from PyQt5.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton, QTabWidget, 
-    QWidget, QVBoxLayout as QVBoxLayout2, QLabel, QSpinBox, QCheckBox
+    QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton, 
+    QWidget, QLabel, QSpinBox, QCheckBox
 )
 import pyqtgraph as pg
 from pyqtgraph import ViewBox
@@ -75,8 +75,6 @@ class SpectrometerController(QObject):
         self.apply_btn.clicked.connect(self.update_measurement_settings)
         integ_layout.addWidget(self.apply_btn)
 
-        # Removed auto-adjust checkbox
-
         main_layout.addLayout(integ_layout)
 
         # Cycles and repetitions controls with bold labels
@@ -104,33 +102,17 @@ class SpectrometerController(QObject):
 
         main_layout.addLayout(cycles_layout)
 
-        # Spectral plots in tabs
+        # Optimize graph performance
         pg.setConfigOption('background', '#252525')
         pg.setConfigOption('foreground', '#e0e0e0')
-        self.tab_widget = QTabWidget()
-
-        # Tab 1: Wavelength vs Intensity
-        tab1 = QWidget()
-        layout1 = QVBoxLayout2(tab1)
-        self.plot_wl = pg.PlotWidget()
-        self.plot_wl.setLabel('bottom', 'Wavelength', 'nm')
-        self.plot_wl.setLabel('left', 'Intensity', 'counts')
-        self.plot_wl.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_wl.getViewBox().enableAutoRange(ViewBox.XYAxes, True)
-        # Add a more attractive style
-        self.curve_wl = self.plot_wl.plot([], [], pen=pg.mkPen('#4a86e8', width=2), 
-                                         symbolBrush=(74, 134, 232), symbolPen='w', symbol='o', 
-                                         symbolSize=5, name="Wavelength Spectrum")
-        layout1.addWidget(self.plot_wl)
-        self.tab_widget.addTab(tab1, "Wavelength vs Intensity")
-
-        # Tab 2: Pixel vs Count
-        tab2 = QWidget()
-        layout2 = QVBoxLayout2(tab2)
+        pg.setConfigOption('antialias', False)  # Disable antialiasing for better performance
+        pg.setConfigOption('useOpenGL', True)   # Use OpenGL for rendering if available
+        
+        # Only show Pixel vs Count plot for better performance
         self.plot_px = pg.PlotWidget()
         # Set fixed range for x-axis (0-2048 pixels)
         self.plot_px.setXRange(0, 2048)
-        self.plot_px.setLabel('bottom', 'Pixel', '')  # Remove 'Index' from label
+        self.plot_px.setLabel('bottom', 'Pixel', '')
         self.plot_px.setLabel('left', 'Count', '')
         # Enable auto-range only for y-axis
         self.plot_px.getViewBox().enableAutoRange(ViewBox.YAxis, True)
@@ -139,17 +121,18 @@ class SpectrometerController(QObject):
 
         # Configure x-axis ticks to show 0, 100, 200, etc.
         x_axis = self.plot_px.getAxis('bottom')
-        x_ticks = [(i, str(i)) for i in range(0, 2049, 100)]  # Create ticks at 0, 100, 200, etc.
+        x_ticks = [(i, str(i)) for i in range(0, 2049, 100)]
         x_axis.setTicks([x_ticks])
 
-        # Add a more attractive style
+        # Add a more attractive style with optimized rendering
         self.curve_px = self.plot_px.plot([], [], pen=pg.mkPen('#f44336', width=2),
                                          fillLevel=0, fillBrush=pg.mkBrush(244, 67, 54, 50),
-                                         name="Pixel Counts")
-        layout2.addWidget(self.plot_px)
-        self.tab_widget.addTab(tab2, "Pixel vs Count")
-        # Add the tab widget to the groupbox layout
-        main_layout.addWidget(self.tab_widget)
+                                         name="Pixel Counts", 
+                                         skipFiniteCheck=True,  # Skip finite check for better performance
+                                         antialias=False)       # Disable antialiasing for this curve
+        
+        # Add the plot widget to the groupbox layout
+        main_layout.addWidget(self.plot_px)
         self.groupbox.setLayout(main_layout)
 
         # Internal state
@@ -171,13 +154,13 @@ class SpectrometerController(QObject):
         self.csv_dir = "data"
         os.makedirs(self.csv_dir, exist_ok=True)
 
-        # Timer for updating plot
+        # Timer for updating plot - increase frequency for faster updates
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self._update_plot)
-        self.plot_timer.start(200)  # update plot at 5 Hz
+        self.plot_timer.start(50)  # update plot at 20 Hz (was 200ms/5Hz)
 
-        # Add downsampling for plots
-        self.downsample_factor = 2  # Only plot every 2nd point
+        # Add downsampling for plots - reduce for better resolution
+        self.downsample_factor = 1  # No downsampling for better resolution (was 2)
 
         # Add new attributes
         self.driver = SpectrometerDriver()
@@ -185,6 +168,9 @@ class SpectrometerController(QObject):
         self.watchdog_timer = QTimer()
         self.watchdog_timer.timeout.connect(self._check_measurement_status)
         self.watchdog_timer.start(1000)  # Check every second
+        
+        # Add high-resolution ADC mode flag
+        self.high_res_adc = True
 
     def connect(self):
         # Emit status for feedback
@@ -199,6 +185,16 @@ class SpectrometerController(QObject):
         self.wls = wavelengths.tolist() if isinstance(wavelengths, np.ndarray) else wavelengths
         self.npix = num_pixels
         self._ready = True
+        
+        # Enable high-resolution ADC mode if available
+        if hasattr(self, 'high_res_adc') and self.high_res_adc:
+            try:
+                from drivers.avaspec import AVS_UseHighResAdc
+                AVS_UseHighResAdc(self.handle, True)
+                self.status_signal.emit("High-resolution ADC mode enabled")
+            except Exception as e:
+                self.status_signal.emit(f"Could not enable high-res ADC: {e}")
+        
         # Enable measurement start once connected
         self.start_btn.setEnabled(True)
         self.status_signal.emit(f"Spectrometer ready (SN={serial_str})")
@@ -280,61 +276,44 @@ class SpectrometerController(QObject):
             self.status_signal.emit(f"Spectrometer error code {status_code}")
 
     def _update_plot(self):
-        """Update the plots with intensity data, ensuring arrays have matching shapes"""
+        """Update the plots with intensity data, optimized for performance"""
         if not self.intens:
             return
         
         try:
-            # Get the data arrays
+            # Get the data arrays - use numpy for better performance
             intensities = np.array(self.intens)
-            wavelengths = np.array(self.wls) if self.wls else np.arange(len(intensities))
-            
-            # Ensure arrays are the same length
-            min_length = min(len(intensities), len(wavelengths))
-            intensities = intensities[:min_length]
-            wavelengths = wavelengths[:min_length]
             
             # Create pixel indices array
             pixel_indices = np.arange(len(intensities))
             
-            # Apply downsampling to reduce points plotted
+            # Apply downsampling to reduce points plotted if needed
             if hasattr(self, 'downsample_factor') and self.downsample_factor > 1:
                 step = self.downsample_factor
                 # Use numpy indexing for consistent slicing
-                mask = np.zeros(len(intensities), dtype=bool)
-                mask[::step] = True
-                
-                # Apply mask to all arrays
-                intensities = intensities[mask]
-                wavelengths = wavelengths[mask]
-                pixel_indices = pixel_indices[mask]
+                intensities = intensities[::step]
+                pixel_indices = pixel_indices[::step]
             
-            # Update wavelength plot
-            self.curve_wl.setData(wavelengths, intensities)
-            
-            # Update pixel plot
+            # Update pixel plot - this is now the only plot we maintain
             self.curve_px.setData(pixel_indices, intensities)
             
-            # Auto-adjust y-axis range based on current data, but not too frequently
+            # Auto-adjust y-axis range less frequently for better performance
             if not hasattr(self, '_range_update_counter'):
                 self._range_update_counter = 0
             
             self._range_update_counter += 1
-            if self._range_update_counter >= 5:  # Only update range every 5 cycles
+            if self._range_update_counter >= 10:  # Only update range every 10 cycles (was 5)
                 self._range_update_counter = 0
                 if len(intensities) > 0 and np.max(intensities) > 0:
                     # Add 10% padding to the top of the y-range
                     max_y = np.max(intensities) * 1.1
                     self.plot_px.setYRange(0, max_y)
-            
-            # Removed auto-adjust integration time functionality
         
         except Exception as e:
             # Log the error but don't crash
             print(f"Plot update error: {e}")
             # Try to recover by clearing the plots
             try:
-                self.curve_wl.setData([], [])
                 self.curve_px.setData([], [])
             except:
                 pass
@@ -358,10 +337,10 @@ class SpectrometerController(QObject):
         path = os.path.join(self.csv_dir, f"snapshot_{ts}.csv")
         try:
             with open(path, 'w') as f:
-                f.write("Wavelength (nm),Intensity\n")
-                for wl, inten in zip(self.wls, self.intens):
+                f.write("Pixel,Intensity\n")
+                for i, inten in enumerate(self.intens):
                     if inten != 0:
-                        f.write(f"{wl:.4f},{inten:.4f}\n")
+                        f.write(f"{i},{inten:.4f}\n")
             self.status_signal.emit(f"Saved snapshot to {path}")
         except Exception as e:
             self.status_signal.emit(f"Save error: {e}")
@@ -439,11 +418,6 @@ class SpectrometerController(QObject):
         self.measure_active = True
         self.stop_btn.setEnabled(True)
         self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
-
-    # Removed auto_adjust_integration_time method
-    # def auto_adjust_integration_time(self):
-    #     """Automatically adjust integration time based on peak value and filter wheel position"""
-    #     ...
 
     def connect_spectrometer(self, ispec=0):
         """Connect to a specific spectrometer by index"""
@@ -538,7 +512,6 @@ class SpectrometerController(QObject):
         """Process new data from spectrometer"""
         if ispec in self.driver.handles and 'last_data' in self.driver.handles[ispec]:
             data = self.driver.handles[ispec]['last_data']
-            wavelengths = self.driver.handles[ispec]['wavelengths']
             
             # Update the data for plotting
             self.intens = data
@@ -553,5 +526,67 @@ class SpectrometerController(QObject):
             # Enable snapshot save and continuous save after data received
             self.save_btn.setEnabled(True)
             self.toggle_btn.setEnabled(True)
+
+    def enable_high_res_adc(self, enable=True):
+        """Enable or disable high-resolution ADC mode"""
+        self.high_res_adc = enable
+        if self._ready and self.handle:
+            try:
+                from drivers.avaspec import AVS_UseHighResAdc
+                AVS_UseHighResAdc(self.handle, enable)
+                self.status_signal.emit(f"High-resolution ADC mode {'enabled' if enable else 'disabled'}")
+                return True
+            except Exception as e:
+                self.status_signal.emit(f"Could not change ADC mode: {e}")
+                return False
+        return False
+
+    def set_sync_mode(self, enable=False):
+        """Enable or disable synchronous measurement mode"""
+        if self._ready and self.handle:
+            try:
+                from drivers.avaspec import AVS_SetSyncMode
+                AVS_SetSyncMode(self.handle, enable)
+                self.status_signal.emit(f"Synchronous mode {'enabled' if enable else 'disabled'}")
+                return True
+            except Exception as e:
+                self.status_signal.emit(f"Could not change sync mode: {e}")
+                return False
+        return False
+
+    def plot_final_data(self, data):
+        """Plot final data from a completed routine"""
+        if not data or not isinstance(data, list):
+            self.status_signal.emit("No valid data to plot")
+            return
+        
+        try:
+            import numpy as np
+            # Create pixel indices array
+            pixel_indices = np.arange(len(data))
+            
+            # Update the plot
+            self.curve_px.setData(pixel_indices, data)
+            
+            # Update y-axis range
+            if len(data) > 0 and max(data) > 0:
+                max_y = max(data) * 1.1
+                self.plot_px.setYRange(0, max_y)
+            
+            # Add timestamp to the plot title
+            from PyQt5.QtCore import QDateTime
+            timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd HH:mm:ss")
+            self.plot_px.setTitle(f"Final Scan - {timestamp}")
+            
+            # Enable save button to save this final plot
+            self.save_btn.setEnabled(True)
+            
+            # Store the data as current intensities
+            self.intens = data.copy()
+            
+            self.status_signal.emit(f"Plotted final data with peak value: {max(data):.1f}")
+        except Exception as e:
+            self.status_signal.emit(f"Error plotting final data: {e}")
+
 
 
