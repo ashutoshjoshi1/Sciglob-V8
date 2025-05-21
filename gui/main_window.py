@@ -258,7 +258,7 @@ class MainWindow(QMainWindow):
                 integration_time_ms = self.spec_ctrl.current_integration_time_us
             
             # Ensure minimum interval of 100ms
-            collection_interval = max(100, integration_time_ms)
+            collection_interval = max(100, int(integration_time_ms))
             
             # Start data collection timer - collect at integration time rate
             self.data_timer = QTimer(self)
@@ -276,8 +276,8 @@ class MainWindow(QMainWindow):
             self.data_logger.save_interval = save_interval
             
             # Update button text if it exists
-            if hasattr(self, 'toggle_save_btn'):
-                self.toggle_save_btn.setText("Stop Saving")
+            if hasattr(self.spec_ctrl, 'toggle_btn'):
+                self.spec_ctrl.toggle_btn.setText("Stop Saving")
         else:
             self.statusBar().showMessage("Data saving stopped")
             
@@ -288,8 +288,8 @@ class MainWindow(QMainWindow):
                 self.save_timer.stop()
             
             # Update button text if it exists
-            if hasattr(self, 'toggle_save_btn'):
-                self.toggle_save_btn.setText("Start Saving")
+            if hasattr(self.spec_ctrl, 'toggle_btn'):
+                self.spec_ctrl.toggle_btn.setText("Start Saving")
 
     def collect_data_sample(self):
         """Collect a data sample for averaging, with pause on hardware state changes"""

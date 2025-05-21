@@ -174,15 +174,28 @@ class SpectrometerController(QObject):
         
         # Add high-resolution ADC mode flag
         self.high_res_adc = True
+        
+        # Auto-connect on startup after a short delay
+        QTimer.singleShot(500, self.connect)
 
     def connect(self):
+        # Check if this is an auto-connect attempt
+        is_auto_connect = hasattr(self, '_auto_connect') and self._auto_connect
+        
         # Emit status for feedback
         self.status_signal.emit("Connecting to spectrometer...")
         try:
             handle, wavelengths, num_pixels, serial_str = connect_spectrometer()
         except Exception as e:
-            self.status_signal.emit(f"Connection failed: {e}")
+            error_msg = f"Connection failed: {e}"
+            self.status_signal.emit(error_msg)
+            
+            # If this was an auto-connect attempt, schedule a retry after a delay
+            if is_auto_connect:
+                self.status_signal.emit("Will retry connection in 5 seconds...")
+                QTimer.singleShot(5000, self.connect)
             return
+        
         self.handle = handle
         # Store wavelength calibration and number of pixels
         self.wls = wavelengths.tolist() if isinstance(wavelengths, np.ndarray) else wavelengths
@@ -201,6 +214,10 @@ class SpectrometerController(QObject):
         # Enable measurement start once connected
         self.start_btn.setEnabled(True)
         self.status_signal.emit(f"Spectrometer ready (SN={serial_str})")
+        
+        # Clear auto-connect flag after successful connection
+        if hasattr(self, '_auto_connect'):
+            self._auto_connect = False
 
     def start(self):
         if not self._ready:
@@ -350,6 +367,12 @@ class SpectrometerController(QObject):
 
     def toggle(self):
         # This method is overridden by MainWindow if parent is provided.
+        if hasattr(self, 'toggle_btn'):
+            current_text = self.toggle_btn.text()
+            if current_text == "Start Saving":
+                self.toggle_btn.setText("Stop Saving")
+            else:
+                self.toggle_btn.setText("Start Saving")
         self.status_signal.emit("Continuous-save not yet implemented")
 
     def is_ready(self):
