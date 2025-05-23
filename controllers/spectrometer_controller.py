@@ -178,6 +178,9 @@ class SpectrometerController(QObject):
         # Auto-connect on startup after a short delay
         QTimer.singleShot(500, self.connect)
 
+        # Initialize static curves list
+        self.static_curves = []
+
     def connect(self):
         # Check if this is an auto-connect attempt
         is_auto_connect = hasattr(self, '_auto_connect') and self._auto_connect
@@ -296,8 +299,8 @@ class SpectrometerController(QObject):
             self.status_signal.emit(f"Spectrometer error code {status_code}")
 
     def _update_plot(self):
-        """Update the plots with intensity data, optimized for performance"""
-        if not self.intens:
+        """Update the plot with current data"""
+        if not hasattr(self, 'intens') or not self.intens:
             return
         
         try:
@@ -327,6 +330,15 @@ class SpectrometerController(QObject):
                 if len(intensities) > 0 and np.max(intensities) > 0:
                     # Add 10% padding to the top of the y-range
                     max_y = np.max(intensities) * 1.1
+                    
+                    # If we have static curves, check their max values too
+                    if hasattr(self, 'static_curves') and self.static_curves:
+                        for curve in self.static_curves:
+                            if curve.yData is not None and len(curve.yData) > 0:
+                                curve_max = np.max(curve.yData)
+                                if curve_max > max_y:
+                                    max_y = curve_max * 1.1
+                    
                     self.plot_px.setYRange(0, max_y)
         
         except Exception as e:
@@ -657,6 +669,15 @@ class SpectrometerController(QObject):
             self.status_signal.emit(f"Plotted final data with peak value: {max(data):.1f}")
         except Exception as e:
             self.status_signal.emit(f"Error plotting final data: {e}")
+
+    def clear_static_curves(self):
+        """Clear all static curves from the plot"""
+        if hasattr(self, 'static_curves') and self.static_curves:
+            for curve in self.static_curves:
+                self.plot_px.removeItem(curve)
+            self.static_curves = []
+            self.plot_px.setTitle("Spectrometer - All static curves cleared")
+            self.status_signal.emit("All static curves cleared")
 
 
 

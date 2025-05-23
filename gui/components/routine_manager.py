@@ -106,6 +106,22 @@ class ResultsPlotDialog(QDialog):
         super().closeEvent(event)
 
 class RoutineManager(QObject):
+    """
+    Manages the execution of measurement routines.
+    
+    Supported commands:
+    - log [message]: Displays a message in the status bar
+    - wait [time_ms]: Waits for the specified time in milliseconds
+    - motor move [angle]: Moves the motor to the specified angle
+    - filter position [position]: Sets the filter wheel to the specified position
+    - spectrometer start: Starts a spectrometer measurement
+    - spectrometer stop: Stops the current spectrometer measurement
+    - spectrometer save: Saves the current spectrometer data
+    - data start: Starts continuous data saving
+    - data stop: Stops continuous data saving
+    - plot: Takes a snapshot of the current spectrometer data and adds it as a static curve
+    - integration [time_ms]: Sets the spectrometer integration time in milliseconds
+    """
     status_signal = pyqtSignal(str)
     
     def __init__(self, main_window):
@@ -147,6 +163,9 @@ class RoutineManager(QObject):
                 f.write("wait 1000\n")
                 f.write("motor move 0\n")
                 f.write("wait 2000\n")
+                f.write("# Set integration time to 100ms\n")
+                f.write("integration 100\n")
+                f.write("wait 1000\n")
                 f.write("spectrometer start\n")
                 f.write("wait 5000\n")
                 f.write("spectrometer save\n")
@@ -178,6 +197,34 @@ class RoutineManager(QObject):
         # Create other default routines as needed
         self._create_simple_routine("dark_reference.txt", "Dark Reference", 1)
         self._create_simple_routine("white_reference.txt", "White Reference", 2)
+
+        # Integration Time Test routine
+        integration_test = os.path.join(self.routines_dir, "integration_test.txt")
+        if not os.path.exists(integration_test):
+            with open(integration_test, 'w') as f:
+                f.write("# Integration Time Test Routine\n")
+                f.write("log Starting Integration Time Test\n")
+                f.write("filter position 2\n")  # Open filter
+                f.write("wait 1000\n")
+                f.write("motor move 90\n")  # Position at 90 degrees
+                f.write("wait 2000\n")
+                
+                # Test different integration times
+                integration_times = [10, 50, 100, 500, 1000]
+                for it in integration_times:
+                    f.write(f"# Set integration time to {it}ms\n")
+                    f.write(f"integration {it}\n")
+                    f.write("wait 1000\n")
+                    f.write("spectrometer start\n")
+                    f.write("wait 3000\n")
+                    f.write("plot\n")  # Take a snapshot for comparison
+                    f.write("wait 1000\n")
+                    f.write(f"log Completed measurement with {it}ms integration time\n")
+                
+                f.write("log Integration Time Test Complete\n")
+    
+        # Add the new routine to presets
+        self.presets["Integration Test"] = integration_test
 
     def _create_simple_routine(self, filename, name, filter_pos):
         """Create a simple routine file with the given name and filter position"""
@@ -546,20 +593,24 @@ class RoutineManager(QObject):
 
     def _execute_command(self, command):
         """Execute a single command from the routine"""
+        # Split the command into parts
+        parts = command.strip().split()
+        if not parts:
+            # Empty command, skip to next
+            QTimer.singleShot(100, self._execute_next_command)
+            return
+        
+        cmd_type = parts[0].lower()
+        
         try:
-            # Split the command into parts
-            parts = command.split()
-            cmd_type = parts[0].lower()
-            
             # Log command
             if cmd_type == "log":
                 message = " ".join(parts[1:])
                 self.main_window.statusBar().showMessage(message)
-                if hasattr(self, 'status_signal'):
-                    self.status_signal.emit(message)
                 print(f"Routine log: {message}")
-                # Continue to next command immediately
-                QTimer.singleShot(100, self._execute_next_command)
+                
+                # Continue to next command after a short delay
+                QTimer.singleShot(500, self._execute_next_command)
             
             # Wait command
             elif cmd_type == "wait":
@@ -567,15 +618,49 @@ class RoutineManager(QObject):
                     try:
                         wait_time = int(parts[1])
                         self.main_window.statusBar().showMessage(f"Waiting for {wait_time} ms")
-                        # Set timer for next command
-                        self.routine_timer.start(wait_time)
+                        QTimer.singleShot(wait_time, self._execute_next_command)
                     except ValueError:
                         print(f"Invalid wait time: {parts[1]}")
-                        # Continue to next command
                         QTimer.singleShot(100, self._execute_next_command)
                 else:
-                    # No wait time specified, continue immediately
+                    print("Wait command requires a time value")
                     QTimer.singleShot(100, self._execute_next_command)
+            
+            # Integration time command - NEW
+            elif cmd_type == "integration":
+                if len(parts) > 1:
+                    try:
+                        integration_time = float(parts[1])
+                        self.main_window.statusBar().showMessage(f"Setting integration time to {integration_time} ms")
+                        
+                        # Set integration time in the spectrometer controller
+                        if hasattr(self.main_window, 'spec_ctrl'):
+                            # Update the spinbox value
+                            self.main_window.spec_ctrl.integ_spinbox.setValue(int(integration_time))
+                            
+                            # Apply the new settings
+                            self.main_window.spec_ctrl.update_measurement_settings()
+                            
+                            # Log the change
+                            print(f"Integration time set to {integration_time} ms")
+                        else:
+                            self.main_window.statusBar().showMessage("Spectrometer controller not available")
+                            
+                        # Continue to next command after a delay to allow settings to apply
+                        QTimer.singleShot(1000, self._execute_next_command)
+                    except ValueError:
+                        print(f"Invalid integration time: {parts[1]}")
+                        QTimer.singleShot(100, self._execute_next_command)
+                else:
+                    print("Integration command requires a time value in milliseconds")
+                    QTimer.singleShot(100, self._execute_next_command)
+            
+            # Plot command
+            elif cmd_type == "plot":
+                self.main_window.statusBar().showMessage("Taking snapshot for plot")
+                self._take_snapshot_and_plot()
+                # Continue to next command after a delay to allow plot to complete
+                QTimer.singleShot(1000, self._execute_next_command)
             
             # Motor command
             elif cmd_type == "motor":
@@ -679,7 +764,94 @@ class RoutineManager(QObject):
         
         except Exception as e:
             import traceback
-            print(f"Error executing command '{command}': {e}")
+            self.main_window.statusBar().showMessage(f"Error executing command: {str(e)}")
+            print(f"Error executing command '{command}': {str(e)}")
             print(traceback.format_exc())
-            # Try to continue to next command
-            QTimer.singleShot(100, self._execute_next_command)
+            
+            # Try to continue with next command
+            QTimer.singleShot(1000, self._execute_next_command)
+
+    def _take_snapshot_and_plot(self):
+        """Take a snapshot of current spectrometer data and plot it as a static curve"""
+        try:
+            # Check if spectrometer controller is available
+            if not hasattr(self.main_window, 'spec_ctrl'):
+                self.main_window.statusBar().showMessage("Spectrometer controller not available")
+                return
+            
+            spec_ctrl = self.main_window.spec_ctrl
+            
+            # Check if we have intensity data
+            if not hasattr(spec_ctrl, 'intens') or not spec_ctrl.intens:
+                self.main_window.statusBar().showMessage("No spectrometer data available")
+                return
+            
+            # Get current data
+            intensities = np.array(spec_ctrl.intens)
+            pixel_indices = np.arange(len(intensities))
+            
+            # Create a timestamp for the snapshot
+            timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd HH:mm:ss")
+            
+            # Generate a random color for this curve to distinguish it from others
+            import random
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+            
+            # Create a name for this snapshot
+            snapshot_name = f"Snapshot {timestamp}"
+            
+            # Add a new static curve to the plot
+            # First, check if we have a list to store static curves
+            if not hasattr(spec_ctrl, 'static_curves'):
+                spec_ctrl.static_curves = []
+            
+            # Limit the number of static curves to prevent clutter (keep last 5)
+            if len(spec_ctrl.static_curves) >= 5:
+                # Remove the oldest curve
+                oldest_curve = spec_ctrl.static_curves.pop(0)
+                spec_ctrl.plot_px.removeItem(oldest_curve)
+            
+            # Create a new curve with the random color
+            new_curve = spec_ctrl.plot_px.plot(
+                pixel_indices, 
+                intensities,
+                pen=pg.mkPen(color=(r, g, b), width=1.5),
+                name=snapshot_name
+            )
+            
+            # Add the new curve to our list
+            spec_ctrl.static_curves.append(new_curve)
+            
+            # Update the plot title to show we've added a snapshot
+            spec_ctrl.plot_px.setTitle(f"Spectrometer - Added {snapshot_name}")
+            
+            # Save the snapshot data to a file in the diagrams directory
+            try:
+                # Create diagrams directory if it doesn't exist
+                diagrams_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "diagrams")
+                os.makedirs(diagrams_dir, exist_ok=True)
+                
+                # Create a filename with timestamp
+                ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
+                filename = os.path.join(diagrams_dir, f"snapshot_{ts}.csv")
+                
+                # Save the data to CSV
+                with open(filename, 'w') as f:
+                    f.write("Pixel,Intensity\n")
+                    for i, intensity in enumerate(intensities):
+                        f.write(f"{i},{intensity}\n")
+                
+                print(f"Snapshot data saved to {filename}")
+                
+            except Exception as e:
+                print(f"Error saving snapshot data: {e}")
+            
+            self.main_window.statusBar().showMessage(f"Added static plot: {snapshot_name}")
+            
+        except Exception as e:
+            import traceback
+            self.main_window.statusBar().showMessage(f"Error taking snapshot: {str(e)}")
+            print(f"Error taking snapshot: {str(e)}")
+            print(traceback.format_exc())
