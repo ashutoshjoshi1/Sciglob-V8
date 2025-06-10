@@ -31,32 +31,57 @@ def parse_imu_packet(packet: bytes):
         return ("Mag", mx / 32768.0 * 1000.0, my / 32768.0 * 1000.0, mz / 32768.0 * 1000.0)
     return ("Unknown", None)
 
+import serial # Make sure serial is imported for SerialException
+
 def read_from_imu(serial_obj, data_dict: dict, stop_event: threading.Event):
     buffer = []
-    while serial_obj.is_open and not stop_event.is_set():
-        byte = serial_obj.read()
-        if not byte:
-            continue
-        buffer.append(byte[0] if isinstance(byte, (bytes, bytearray)) else ord(byte))
-        if len(buffer) >= 11:
-            if buffer[0] == 0x55 and (sum(buffer[:10]) & 0xFF) == buffer[10]:
-                packet = bytes(buffer[:11])
-                buffer = buffer[11:]
-                label, *vals = parse_imu_packet(packet)
-                if label == "Angle":
-                    data_dict["rpy"] = tuple(vals)
-                elif label == "Pressure":
-                    data_dict["pressure"], data_dict["temperature"] = vals
-                elif label == "GPS" and vals[0] is not None:
-                    data_dict["latitude"], data_dict["longitude"] = vals
-                elif label == "Accel":
-                    data_dict["accel"] = tuple(vals)
-                elif label == "Gyro":
-                    data_dict["gyro"] = tuple(vals)
-                elif label == "Mag":
-                    data_dict["mag"] = tuple(vals)
-            else:
-                buffer.pop(0)
+    try:
+        while serial_obj.is_open and not stop_event.is_set():
+            byte = serial_obj.read() # This can block until timeout if no data
+            if not byte: # Timeout occurred, or stop_event set during read
+                if stop_event.is_set(): # Check if stop_event was the reason for empty byte
+                    break
+                continue
+
+            buffer.append(byte[0] if isinstance(byte, (bytes, bytearray)) else ord(byte))
+
+            # Process buffer if it's long enough for a potential packet
+            while len(buffer) >= 11:
+                if buffer[0] == 0x55: # Check for start byte
+                    if (sum(buffer[:10]) & 0xFF) == buffer[10]: # Checksum validation
+                        packet = bytes(buffer[:11])
+                        buffer = buffer[11:] # Consume packet from buffer
+
+                        label, *vals = parse_imu_packet(packet)
+                        if label == "Angle":
+                            data_dict["rpy"] = tuple(vals)
+                        elif label == "Pressure":
+                            data_dict["pressure"], data_dict["temperature"] = vals
+                        elif label == "GPS" and vals[0] is not None:
+                            data_dict["latitude"], data_dict["longitude"] = vals
+                        elif label == "Accel":
+                            data_dict["accel"] = tuple(vals)
+                        elif label == "Gyro":
+                            data_dict["gyro"] = tuple(vals)
+                        elif label == "Mag":
+                            data_dict["mag"] = tuple(vals)
+                        # else: unknown packet, already handled by parse_imu_packet
+                    else: # Checksum failed
+                        buffer.pop(0) # Discard start byte and retry
+                else: # First byte is not 0x55
+                    buffer.pop(0) # Discard and align to next potential start byte
+    except serial.SerialException as se:
+        # Handle serial errors (e.g., device disconnected)
+        print(f"IMU Read Thread: SerialException: {se}")
+        # data_dict could be updated here to signal an error state if needed by controller
+        data_dict["error"] = str(se)
+    except Exception as e:
+        # Handle other unexpected errors in the thread
+        print(f"IMU Read Thread: Unexpected error: {e}")
+        data_dict["error"] = str(e)
+    finally:
+        print("IMU Read Thread: Exiting.")
+        # The serial_obj is managed by the controller, so this thread should not close it.
 
 def start_imu_read_thread(serial_obj, data_dict: dict):
     stop_event = threading.Event()

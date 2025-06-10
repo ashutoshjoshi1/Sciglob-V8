@@ -1,7 +1,8 @@
-import math, datetime, numpy as np
+import math, datetime
+import numpy as np # Moved numpy import to top
 from astral import LocationInfo
 from astral.sun import azimuth, elevation
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+# from mpl_toolkits.mplot3d.art3d import Poly3DCollection # This import is unused
 
 def compute_sun_vector(lat,lon):
     now=datetime.datetime.now(datetime.timezone.utc)
@@ -10,7 +11,7 @@ def compute_sun_vector(lat,lon):
     azr,elr=math.radians(az),math.radians(el)
     return math.cos(elr)*math.sin(azr), math.cos(elr)*math.cos(azr), math.sin(elr)
 
-def draw_device_orientation(ax, roll, pitch, yaw, lat, lon):
+def draw_device_orientation(ax, roll, pitch, yaw): # Removed unused lat, lon parameters
     """
     Draw a speed camera-like object in 3D space with the given orientation
     """
@@ -25,8 +26,7 @@ def draw_device_orientation(ax, roll, pitch, yaw, lat, lon):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     
-    # Create rotation matrices using NumPy
-    import numpy as np
+    # NumPy is already imported at the top of the file
     
     # Convert degrees to radians
     roll_rad = np.radians(roll)

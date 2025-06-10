@@ -62,8 +62,7 @@ class DataLogger(QObject):
         # Write headers to CSV file
         headers = self._get_csv_headers()
         self.csv_file.write(",".join(headers) + "\n")
-        self.csv_file.flush()
-        os.fsync(self.csv_file.fileno())
+        self.csv_file.flush() # Ensures headers are written to OS buffer
         
         # Initialize data collection for averaging
         self._data_collection = []
@@ -228,8 +227,8 @@ class DataLogger(QObject):
             self._data_collection = []
             
         except Exception as e:
-            print("save_continuous_data error:", e)
-            self.status_signal.emit(f"Save error: {e}")
+            # print("save_continuous_data error:", e) # Changed to emit status signal
+            self.status_signal.emit(f"Error in save_continuous_data: {e}")
     
     def _calculate_average_intensities(self):
         """Calculate average intensities from collected samples"""

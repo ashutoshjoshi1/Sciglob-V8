@@ -10,7 +10,8 @@ import os
 
 from drivers.spectrometer import (
     connect_spectrometer, AVS_MeasureCallback, AVS_MeasureCallbackFunc, 
-    AVS_GetScopeData, StopMeasureThread, prepare_measurement, SpectrometerDriver
+    AVS_GetScopeData, StopMeasureThread, prepare_measurement, SpectrometerDriver,
+    deactivate_spectrometer_handle # Import the new function
 )
 
 class SpectrometerController(QObject):
@@ -30,7 +31,7 @@ class SpectrometerController(QObject):
         btn_layout = QHBoxLayout()
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setStyleSheet("font-weight: bold; font-size: 11pt;")
-        self.connect_btn.clicked.connect(self.connect)
+        self.connect_btn.clicked.connect(self.toggle_main_connection) # Changed
         btn_layout.addWidget(self.connect_btn)
         
         self.start_btn = QPushButton("Start")
@@ -176,55 +177,101 @@ class SpectrometerController(QObject):
         self.high_res_adc = True
         
         # Auto-connect on startup after a short delay
-        QTimer.singleShot(500, self.connect)
+        # Using a flag _auto_connecting to manage retry logic for initial auto-connect
+        self._auto_connecting = True
+        QTimer.singleShot(500, self.connect_main_spectrometer)
 
         # Initialize static curves list
         self.static_curves = []
 
-    def connect(self):
-        # Check if this is an auto-connect attempt
-        is_auto_connect = hasattr(self, '_auto_connect') and self._auto_connect
+    def toggle_main_connection(self):
+        if not self._ready: # If not ready (implies not connected or connection lost)
+            self.connect_main_spectrometer()
+        else: # If ready (implies connected)
+            self.disconnect_main_spectrometer()
+
+    def connect_main_spectrometer(self):
+        """Connects to the primary spectrometer using self.handle."""
+        if self._ready: # Already connected
+            # self.status_signal.emit("Spectrometer already connected.")
+            return
+
+        self.connect_btn.setText("Connecting...")
+        self.connect_btn.setEnabled(False)
+        self.status_signal.emit("Spectrometer: Connecting...")
         
-        # Emit status for feedback
-        self.status_signal.emit("Connecting to spectrometer...")
         try:
+            # Assuming connect_spectrometer is from drivers.spectrometer for the main handle
             handle, wavelengths, num_pixels, serial_str = connect_spectrometer()
         except Exception as e:
-            error_msg = f"Connection failed: {e}"
+            error_msg = f"Spectrometer: Connection failed: {e}"
             self.status_signal.emit(error_msg)
+            self.connect_btn.setText("Connect")
+            self.connect_btn.setEnabled(True)
             
-            # If this was an auto-connect attempt, schedule a retry after a delay
-            if is_auto_connect:
-                self.status_signal.emit("Will retry connection in 5 seconds...")
-                QTimer.singleShot(5000, self.connect)
+            if self._auto_connecting: # If initial auto-connect fails, schedule a retry
+                self.status_signal.emit("Spectrometer: Will retry connection in 5 seconds...")
+                QTimer.singleShot(5000, self.connect_main_spectrometer)
             return
         
+        self._auto_connecting = False # Clear flag after first successful attempt or manual attempt
         self.handle = handle
-        # Store wavelength calibration and number of pixels
         self.wls = wavelengths.tolist() if isinstance(wavelengths, np.ndarray) else wavelengths
         self.npix = num_pixels
         self._ready = True
         
-        # Enable high-resolution ADC mode if available
         if hasattr(self, 'high_res_adc') and self.high_res_adc:
             try:
-                from drivers.avaspec import AVS_UseHighResAdc
+                from drivers.avaspec import AVS_UseHighResAdc # Assuming this is the correct import
                 AVS_UseHighResAdc(self.handle, True)
-                self.status_signal.emit("High-resolution ADC mode enabled")
+                self.status_signal.emit("Spectrometer: High-resolution ADC mode enabled.")
             except Exception as e:
-                self.status_signal.emit(f"Could not enable high-res ADC: {e}")
+                self.status_signal.emit(f"Spectrometer: Could not enable high-res ADC: {e}")
         
-        # Enable measurement start once connected
+        self.connect_btn.setText("Disconnect")
+        self.connect_btn.setEnabled(True)
         self.start_btn.setEnabled(True)
+        self.apply_btn.setEnabled(False) # Apply settings should be enabled only when measuring
         self.status_signal.emit(f"Spectrometer ready (SN={serial_str})")
+
+    def disconnect_main_spectrometer(self):
+        """Disconnects the primary spectrometer (self.handle)."""
+        self.status_signal.emit("Spectrometer: Disconnecting...")
+        if hasattr(self, 'measure_active') and self.measure_active:
+            self.stop() # Stop measurement first
+            # Note: stop() is asynchronous. Proper handling might need to wait for _on_stop.
+            # For simplicity here, we proceed, assuming stop() will eventually finish.
+            # A more robust solution would use a signal or callback before proceeding.
+            self.status_signal.emit("Spectrometer: Measurement stopped for disconnection.")
+
+        if self.handle is not None:
+            # Call the proper deactivation function from the driver module
+            success, msg = deactivate_spectrometer_handle(self.handle)
+            if success:
+                self.status_signal.emit(f"Spectrometer: {msg}")
+            else:
+                self.status_signal.emit(f"Spectrometer: Deactivation issue: {msg}")
+            self.handle = None # Ensure handle is None after deactivation attempt
         
-        # Clear auto-connect flag after successful connection
-        if hasattr(self, '_auto_connect'):
-            self._auto_connect = False
+        self._ready = False
+        if hasattr(self, 'plot_timer') and self.plot_timer.isActive():
+            self.plot_timer.stop()
+
+        # self.watchdog_timer.stop() # This seems related to SpectrometerDriver, handle separately
+
+        self.connect_btn.setText("Connect")
+        self.connect_btn.setEnabled(True)
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(False)
+        self.save_btn.setEnabled(False)
+        self.toggle_btn.setEnabled(False)
+        self.apply_btn.setEnabled(False)
+        self.curve_px.clear() # Clear plot
+        self.status_signal.emit("Spectrometer: Disconnected.")
 
     def start(self):
-        if not self._ready:
-            self.status_signal.emit("Spectrometer not ready")
+        if not self._ready: # Checks if self.handle is valid and spectrometer is initialized
+            self.status_signal.emit("Spectrometer: Not ready/connected.")
             return
         
         # Get integration time from UI
@@ -289,8 +336,8 @@ class SpectrometerController(QObject):
             if hasattr(self, 'current_integration_time_us'):
                 # Make it accessible to parent (MainWindow)
                 if hasattr(self, 'parent') and self.parent is not None:
-                    if not callable(self.parent):  # Check if parent is not a method
-                        self.parent.current_integration_time_us = self.current_integration_time_us
+                    # Removed "if not callable(self.parent)" check, assuming parent is MainWindow instance
+                    self.parent.current_integration_time_us = self.current_integration_time_us
             
             # Enable snapshot save and continuous save after first data received
             self.save_btn.setEnabled(True)
@@ -463,15 +510,11 @@ class SpectrometerController(QObject):
         """Helper to apply new settings after measurement has stopped"""
         # Set flag to indicate integration time is changing
         if hasattr(self, 'parent') and self.parent is not None:
-            # Check if parent is actually an object and not a method
-            if not callable(self.parent):  # Check if parent is not a method
+                # Removed "if not callable(self.parent)" check
                 if not hasattr(self.parent, '_integration_changing'):
                     setattr(self.parent, '_integration_changing', True)
-                else:
-                    self.parent._integration_changing = True
             else:
-                # Log the issue for debugging
-                print("Warning: parent is a callable, not an object")
+                    self.parent._integration_changing = True
         
         code = prepare_measurement(self.handle, self.npix, 
                                 integration_time_ms=integration_time, 
@@ -494,10 +537,10 @@ class SpectrometerController(QObject):
         self.status_signal.emit(f"Settings updated (Int: {integration_time}ms, Avg: {averages}, Cycles: {cycles}, Rep: {repetitions})")
         
         # Add a delay before resetting the flag to ensure stable readings
-        if hasattr(self, 'parent') and self.parent is not None and not callable(self.parent):
+        if hasattr(self, 'parent') and self.parent is not None: # Removed "not callable(self.parent)"
             if hasattr(self.parent, '_integration_changing'):
                 # Convert integration_time to integer for QTimer.singleShot
-                delay_ms = int(integration_time * 2)
+                delay_ms = int(integration_time * 2) # Ensure integration_time is float or int
                 QTimer.singleShot(delay_ms, 
                                  lambda: setattr(self.parent, '_integration_changing', False))
 

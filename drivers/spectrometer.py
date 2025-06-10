@@ -115,6 +115,41 @@ def stop_measurement(spec_handle):
 def close_spectrometer():
     AVS_Done()
 
+def deactivate_spectrometer_handle(spec_handle):
+    """
+    Stops measurement and deactivates a specific spectrometer handle.
+    This should be used for handles obtained via connect_spectrometer().
+    """
+    if spec_handle is None or spec_handle == INVALID_AVS_HANDLE_VALUE:
+        print("[deactivate_spectrometer_handle] Invalid or null handle provided.")
+        return False, "Invalid handle."
+
+    print(f"[deactivate_spectrometer_handle] Stopping measurement for handle {spec_handle}...")
+    try:
+        # Stop measurement first. AVS_StopMeasure is synchronous enough for this.
+        # If a callback is active, it should cease.
+        ret_stop = AVS_StopMeasure(spec_handle)
+        if ret_stop != 0: # SUCCESS = 0
+            # Log or signal this, but attempt deactivation anyway
+            print(f"[deactivate_spectrometer_handle] AVS_StopMeasure returned {ret_stop} for handle {spec_handle}.")
+    except Exception as e:
+        print(f"[deactivate_spectrometer_handle] Exception during AVS_StopMeasure for handle {spec_handle}: {e}")
+        # Proceed to deactivation if possible
+
+    print(f"[deactivate_spectrometer_handle] Deactivating handle {spec_handle}...")
+    try:
+        ret_deact = AVS_Deactivate(spec_handle)
+        if ret_deact: # True on success
+            print(f"[deactivate_spectrometer_handle] Handle {spec_handle} deactivated successfully.")
+            return True, "Handle deactivated."
+        else:
+            # This could happen if handle was already invalid or deactivated
+            print(f"[deactivate_spectrometer_handle] AVS_Deactivate failed for handle {spec_handle}. Might have been inactive.")
+            return False, "Deactivation failed (handle might be invalid or already inactive)."
+    except Exception as e:
+        print(f"[deactivate_spectrometer_handle] Exception during AVS_Deactivate for handle {spec_handle}: {e}")
+        return False, f"Exception during deactivation: {e}"
+
 class SpectrometerDriver:
     def __init__(self):
         self.handles = {}  # Store multiple spectrometer handles
@@ -157,16 +192,35 @@ class SpectrometerDriver:
     def disconnect(self, ispec, dofree=False):
         """Disconnects from a spectrometer and optionally frees resources"""
         if ispec in self.handles:
+            handle_to_disconnect = self.handles[ispec]['handle']
             try:
-                stop_measurement(self.handles[ispec]['handle'])
+                # Stop any active measurement on this handle first
+                stop_measurement(handle_to_disconnect) # This is a global helper function
+
+                # Deactivate the spectrometer handle
+                ret = AVS_Deactivate(handle_to_disconnect)
+                if not ret: # AVS_Deactivate returns True on success, False if handle not found
+                    # This might indicate the handle was already invalid or an issue occurred
+                    # Log this or include in status message if important
+                    print(f"[SpectrometerDriver] AVS_Deactivate failed or handle {handle_to_disconnect} not found for ispec {ispec}.")
+
+                # Further resource freeing if dofree is True (specific to app needs)
                 if dofree:
-                    # Free additional resources if needed
+                    # Application-specific resource freeing related to this ispec
                     pass
-                del self.handles[ispec]
-                return True, "Disconnected successfully"
+
+                del self.handles[ispec] # Remove from active handles
+
+                # Clean up other per-spectrometer state
+                if ispec in self.data_status: del self.data_status[ispec]
+                if ispec in self.recovery_level: del self.recovery_level[ispec]
+                if ispec in self.recovery_history: del self.recovery_history[ispec]
+                if ispec in self.measurement_stats: del self.measurement_stats[ispec]
+
+                return True, f"Spectrometer ispec {ispec} (handle {handle_to_disconnect}) disconnected and deactivated."
             except Exception as e:
-                return False, f"Disconnect error: {str(e)}"
-        return False, "No spectrometer connected"
+                return False, f"Disconnect error for ispec {ispec}: {str(e)}"
+        return False, f"Spectrometer ispec {ispec} not found in active handles."
     
     def set_it(self, ispec, it):
         """Sets the integration time with bounds checking"""
@@ -300,8 +354,12 @@ class SpectrometerDriver:
         
         # Find which spectrometer this callback is for
         ispec = None
+        # p_data is LPAVS_HANDLE which is ctypes.POINTER(ctypes.c_int).
+        # The actual integer handle value is p_data[0].
+        actual_handle_from_callback = p_data[0]
         for spec_id, spec_data in self.handles.items():
-            if spec_data['handle'] == p_data:
+            # Assuming spec_data['handle'] stores the integer handle value
+            if spec_data['handle'] == actual_handle_from_callback:
                 ispec = spec_id
                 break
                 

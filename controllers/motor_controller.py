@@ -25,7 +25,7 @@ class MotorController(QObject):
         layout.addWidget(self.port_combo, 0, 1)
         
         self.connect_btn = QPushButton("Connect")
-        self.connect_btn.clicked.connect(self.connect)
+        self.connect_btn.clicked.connect(self.toggle_connection) # Changed
         layout.addWidget(self.connect_btn, 0, 2)
 
         # Add preset angle dropdown with bold label
@@ -56,6 +56,7 @@ class MotorController(QObject):
         self.groupbox.setLayout(layout)
         self._connected = False
         self.serial = None
+        self.current_angle_deg = None # Initialize current angle state
 
         # If configured port is provided, select and auto-connect
         if parent is not None and hasattr(parent, 'config'):
@@ -64,25 +65,57 @@ class MotorController(QObject):
                 self.port_combo.setCurrentText(cfg_port)
                 self.connect()
 
+    def toggle_connection(self):
+        """Toggles the connection state."""
+        if not self._connected:
+            self.connect()
+        else:
+            self.disconnect()
+
     def connect(self):
+        if self._connected: # Should not happen if toggle_connection is used correctly
+            return
         port = self.port_combo.currentText().strip()
         self.connect_btn.setEnabled(False)
-        thread = MotorConnectThread(port, parent=self)
+        self.connect_btn.setText("Connecting...")
+        self.status_signal.emit(f"Motor: Connecting to {port}...")
+        thread = MotorConnectThread(port, parent=self) # Assuming MotorConnectThread handles its own errors and emits msg
         thread.result_signal.connect(self._on_connect)
         thread.start()
 
-    def _on_connect(self, ser, baud, msg):
-        self.connect_btn.setEnabled(True)
-        self.status_signal.emit(msg)
-        if ser:
+    def _on_connect(self, ser, baud, msg): # baud parameter seems unused by MotorController itself
+        self.status_signal.emit(msg) # Display message from connect thread (success or failure)
+        if ser: # Successfully connected
             self.serial = ser
             self._connected = True
             self.move_btn.setEnabled(True)
-            # Move to 0 degrees on successful connection
-            self.move_to(0)
-        else:
+            self.connect_btn.setText("Disconnect")
+            self.status_signal.emit(f"Motor connected on {ser.port}.") # More specific success message
+            self.move_to(0)  # Move to 0 degrees on successful connection
+        else: # Connection failed
             self._connected = False
             self.move_btn.setEnabled(False)
+            self.connect_btn.setText("Connect") # Reset button text
+        self.connect_btn.setEnabled(True) # Re-enable button in both cases
+
+    def disconnect(self):
+        """Disconnects from the motor serial port."""
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.close()
+                self.status_signal.emit("Motor disconnected.")
+            except Exception as e:
+                self.status_signal.emit(f"Motor: Error closing serial port: {e}")
+
+        self._connected = False
+        self.serial = None # Clear the serial object
+
+        self.connect_btn.setText("Connect")
+        self.connect_btn.setEnabled(True)
+        self.move_btn.setEnabled(False)
+        # Optionally, reset current angle display here if desired
+        # self.current_angle_deg = None # Or some default
+        # self.angle_input.setText("")
 
     def preset_selected(self, angle_text):
         """Handle selection from the preset angle dropdown"""
@@ -106,30 +139,46 @@ class MotorController(QObject):
         
         try:
             # First update the angle input field
-            if hasattr(self, 'angle_input'):
+            if hasattr(self, 'angle_input'): # Should always exist
                 self.angle_input.setText(str(angle))
             
+            # Disable move buttons during operation
+            self.move_btn.setEnabled(False)
+            self.angle_preset.setEnabled(False)
+
             # Convert angle to motor steps (100 steps per degree)
-            motor_angle = int(angle * 100)
+            # Assuming this conversion (angle * 100) is correct for the specific motor hardware
+            motor_steps = int(angle * 100)
             
-            # Send the command
             ok = False
             if self.serial:
-                ok = send_move_command(self.serial, motor_angle)
+                # Note: If send_move_command is blocking and takes significant time,
+                # it would be better to run it in a separate thread to keep the UI responsive.
+                # For now, assuming it's acceptably fast for direct call.
+                ok = send_move_command(self.serial, motor_steps)
                 
                 if ok:
-                    # Update the current angle attribute when move is successful
-                    self.current_angle = angle
-                    self.current_angle_deg = angle
-                    self.status_signal.emit(f"Moved to {angle}°")
+                    self.current_angle_deg = angle # Update state upon successful command
+                    self.status_signal.emit(f"Motor: Moved to {angle}°")
                 else:
-                    self.status_signal.emit(f"Failed to move to {angle}° (No ACK)")
+                    # If move failed, current_angle_deg remains the old value.
+                    # Or set to None if position becomes uncertain: self.current_angle_deg = None
+                    self.status_signal.emit(f"Motor: Failed to move to {angle}° (No ACK or other error)")
             else:
-                self.status_signal.emit("Serial connection not available")
+                self.status_signal.emit("Motor: Serial connection not available")
             
+            # Re-enable move buttons
+            self.move_btn.setEnabled(True)
+            self.angle_preset.setEnabled(True)
             return ok
+
         except Exception as e:
-            self.status_signal.emit(f"Error moving motor: {str(e)}")
+            self.status_signal.emit(f"Motor: Error moving: {str(e)}")
+            # Ensure buttons are re-enabled in case of exception during the move process
+            if hasattr(self, 'move_btn') and self.move_btn: # Check if UI element still exists
+                self.move_btn.setEnabled(True)
+            if hasattr(self, 'angle_preset') and self.angle_preset: # Check if UI element still exists
+                self.angle_preset.setEnabled(True)
             return False
 
     def is_connected(self):

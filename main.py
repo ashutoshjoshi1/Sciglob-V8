@@ -1,4 +1,5 @@
 import sys
+import traceback # Added for detailed error information
 from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QTimer, Qt
@@ -24,14 +25,19 @@ def main():
     
     # Set up exception handling for clean exit
     sys._excepthook = sys.excepthook
-    def exception_hook(exctype, value, traceback):
+    # tb is the conventional name for the traceback object in excepthook
+    def exception_hook(exctype, value, tb):
         """Handle uncaught exceptions and show error message"""
-        sys._excepthook(exctype, value, traceback)
+        sys._excepthook(exctype, value, tb) # This will typically print to stderr
+        # Also, show a user-friendly dialog
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
-        msg.setText("An unexpected error occurred")
+        msg.setText(f"An unexpected error occurred: {exctype.__name__}")
         msg.setInformativeText(str(value))
-        msg.setWindowTitle("Error")
+        msg.setWindowTitle("Application Error")
+        # Use the traceback module to format the traceback for the detailed text
+        detailed_traceback = "".join(traceback.format_exception(exctype, value, tb))
+        msg.setDetailedText("Traceback:\n" + detailed_traceback)
         msg.exec_()
     sys.excepthook = exception_hook
     
@@ -56,29 +62,30 @@ def main():
         )
         
         if reply == QMessageBox.Yes:
-            # Stop spectrometer if active
-            if hasattr(win, 'spec_ctrl') and win.spec_ctrl is not None:
+            # Call MainWindow's method to handle resource cleanup
+            if hasattr(win, 'shutdown_resources'):
                 try:
-                    if hasattr(win.spec_ctrl, 'measure_active') and win.spec_ctrl.measure_active:
-                        win.statusBar().showMessage("Stopping spectrometer before exit...")
-                        win.spec_ctrl.stop()
+                    win.shutdown_resources()
                 except Exception as e:
-                    print(f"Error stopping spectrometer: {e}")
-            
-            # Clean up resources
-            if hasattr(win, 'continuous_saving') and win.continuous_saving:
-                win.toggle_data_saving()
-            
-            if hasattr(win, 'csv_file') and win.csv_file:
-                win.csv_file.close()
-            if hasattr(win, 'log_file') and win.log_file:
-                win.log_file.close()
+                    print(f"Error during shutdown_resources: {e}") # Keep for console/log
+                    error_msg = QMessageBox()
+                    error_msg.setIcon(QMessageBox.Warning)
+                    error_msg.setText("Error during application cleanup.")
+                    error_msg.setInformativeText(f"Some resources may not have been released properly: {e}")
+                    error_msg.setWindowTitle("Shutdown Warning")
+                    error_msg.exec_()
             
             # Allow the application to quit
-            QTimer.singleShot(500, app.quit)
+            QTimer.singleShot(500, app.quit) # Delay might be for UI messages to show
         else:
             # Prevent the application from quitting
             app.setQuitOnLastWindowClosed(False)
+            # QTimer.singleShot(0, ...) schedules the lambda to be called after the current
+            # event (handling the QMessageBox 'No' response) has finished processing.
+            # This ensures that QuitOnLastWindowClosed is reset to True, so that if the
+            # user closes the window again (or another window if multiple are open),
+            # the application can quit as expected. If not reset, the app might become
+            # unclosable via normal window close operations after saying 'No' once.
             QTimer.singleShot(0, lambda: app.setQuitOnLastWindowClosed(True))
     
     # Connect the aboutToQuit signal to our handler
@@ -86,16 +93,10 @@ def main():
     
     win.show()
     
-    if 'splash' in locals():
+    if 'splash' in locals() and splash is not None: # Ensure splash object exists
         splash.finish(win)
     
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-

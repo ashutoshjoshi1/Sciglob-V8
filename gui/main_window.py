@@ -384,8 +384,7 @@ class MainWindow(QMainWindow):
         
         try:
             self.data_logger.log_file.write(log_line)
-            self.data_logger.log_file.flush()
-            os.fsync(self.data_logger.log_file.fileno())
+            self.data_logger.log_file.flush() # Ensure log is written to OS buffer
         except Exception as e:
             print(f"Log write error: {e}")
 
@@ -447,4 +446,96 @@ class MainWindow(QMainWindow):
             self.camera_manager.release_camera()
         
         # Call the parent class closeEvent
-        event.accept()
+        # event.accept() # This will be handled by shutdown_resources or main.py exit logic
+
+    def shutdown_resources(self):
+        """Clean up all resources before application exit."""
+        self.statusBar().showMessage("Shutting down resources...")
+        print("MainWindow: Starting shutdown_resources...")
+
+        # 1. Stop all timers
+        for timer_attr in ['_hardware_change_timer', '_indicator_timer', 'camera_timer',
+                           'data_timer', 'save_timer']: # data_timer and save_timer might be from DataLogger
+            if hasattr(self, timer_attr):
+                timer = getattr(self, timer_attr)
+                if timer is not None and timer.isActive():
+                    timer.stop()
+                    print(f"MainWindow: Stopped timer {timer_attr}")
+
+        # If data_timer and save_timer are part of DataLogger, they should be stopped there.
+        # Let's assume DataLogger has its own shutdown method or handles this in toggle_data_saving.
+        # For now, the above will attempt to stop them if they are attributes of MainWindow.
+
+        # 2. Stop continuous data saving if active
+        # This will call DataLogger._stop_data_saving() which closes its files.
+        if hasattr(self, 'data_logger') and self.data_logger is not None:
+            if hasattr(self.data_logger, 'continuous_saving') and self.data_logger.continuous_saving:
+                try:
+                    print("MainWindow: Stopping continuous data saving via toggle_data_saving...")
+                    # toggle_data_saving in MainWindow calls self.data_logger.toggle_data_saving(),
+                    # which in turn calls self.data_logger._stop_data_saving().
+                    # It also stops MainWindow's data_timer and save_timer.
+                    self.toggle_data_saving()
+                except Exception as e:
+                    print(f"Error during toggle_data_saving in shutdown: {e}")
+            # Ensure files are closed even if continuous_saving was somehow false but files were open
+            # DataLogger._stop_data_saving() handles setting files to None.
+            # If DataLogger has a direct method to ensure files are closed, call that.
+            # For now, relying on the continuous_saving flag being accurate.
+            # If not saving, _stop_data_saving in DataLogger would have been called already.
+            # Consider adding a more explicit data_logger.ensure_files_closed() if issues persist.
+
+        # 3. Stop spectrometer
+        if hasattr(self, 'spec_ctrl') and self.spec_ctrl is not None:
+            try:
+                if hasattr(self.spec_ctrl, 'measure_active') and self.spec_ctrl.measure_active:
+                    print("MainWindow: Stopping spectrometer measurement...")
+                    self.spec_ctrl.stop()
+                if hasattr(self.spec_ctrl, 'disconnect'): # Assuming a disconnect method
+                    print("MainWindow: Disconnecting spectrometer...")
+                    self.spec_ctrl.disconnect()
+            except Exception as e:
+                print(f"Error stopping/disconnecting spectrometer: {e}")
+
+        # 4. Release camera
+        if hasattr(self, 'camera_manager'):
+            try:
+                print("MainWindow: Releasing camera...")
+                self.camera_manager.release_camera()
+            except Exception as e:
+                print(f"Error releasing camera: {e}")
+
+        # 5. Close/disconnect other hardware controllers
+        controllers_to_close = [
+            ('thp_ctrl', 'THP Controller'),
+            ('temp_ctrl', 'Temperature Controller'),
+            ('motor_ctrl', 'Motor Controller'),
+            ('filter_ctrl', 'Filter Wheel Controller'),
+            ('imu_ctrl', 'IMU Controller')
+        ]
+        for ctrl_attr, name in controllers_to_close:
+            if hasattr(self, ctrl_attr):
+                controller = getattr(self, ctrl_attr)
+                if controller is not None:
+                    if hasattr(controller, 'disconnect'): # Prefer disconnect
+                        try:
+                            print(f"MainWindow: Disconnecting {name}...")
+                            controller.disconnect()
+                        except Exception as e:
+                            print(f"Error disconnecting {name}: {e}")
+                    elif hasattr(controller, 'close'): # Fallback to close
+                        try:
+                            print(f"MainWindow: Closing {name}...")
+                            controller.close()
+                        except Exception as e:
+                            print(f"Error closing {name}: {e}")
+
+        # 6. Close DataLogger files (log and CSV) - This is now handled by step 2.
+        # The call to self.toggle_data_saving() (if continuous saving was active)
+        # triggers self.data_logger.toggle_data_saving(), which calls _stop_data_saving() in DataLogger.
+        # _stop_data_saving() in DataLogger closes the files and sets them to None.
+        # So, explicit closing here is redundant and potentially problematic if files are already None.
+        print("MainWindow: DataLogger files should be closed by DataLogger._stop_data_saving if necessary.")
+
+        print("MainWindow: shutdown_resources completed.")
+        self.statusBar().showMessage("Resources shut down.")

@@ -722,13 +722,26 @@ class RoutineManager(QObject):
                         else:
                             self.main_window.statusBar().showMessage("Spectrometer controller not available")
                     elif parts[1].lower() == "save":
-                        if hasattr(self.main_window, 'spec_ctrl'):
-                            self.main_window.statusBar().showMessage("Saving spectrometer data")
-                            # Trigger a save in the data logger
-                            if hasattr(self.main_window, 'data_logger'):
-                                self.main_window.data_logger.save_data_point()
+                        if hasattr(self.main_window, 'spec_ctrl') and hasattr(self.main_window.spec_ctrl, 'intens'):
+                            spectrum_data = self.main_window.spec_ctrl.intens
+                            if spectrum_data and hasattr(self.main_window, 'data_logger'):
+                                self.main_window.statusBar().showMessage("Saving current spectrometer data...")
+                                metadata = {
+                                    "routine_command": command,
+                                    "timestamp": QDateTime.currentDateTime().toString(Qt.ISODate)
+                                }
+                                # save_final_data expects data as a list/array of intensities
+                                success = self.main_window.data_logger.save_final_data(data=spectrum_data, metadata=metadata)
+                                if success:
+                                    self.main_window.statusBar().showMessage("Spectrometer data saved by routine.")
+                                else:
+                                    self.main_window.statusBar().showMessage("Failed to save spectrometer data by routine.")
+                            elif not spectrum_data:
+                                self.main_window.statusBar().showMessage("No spectrometer data available to save.")
+                            else:
+                                self.main_window.statusBar().showMessage("DataLogger not available.")
                         else:
-                            self.main_window.statusBar().showMessage("Spectrometer controller not available")
+                            self.main_window.statusBar().showMessage("Spectrometer controller or data not available.")
                     else:
                         print(f"Invalid spectrometer command: {command}")
                 else:

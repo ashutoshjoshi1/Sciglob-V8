@@ -37,6 +37,7 @@ class THPController(QObject):
         
         self.groupbox.setLayout(layout)
         
+        self._connected = False # Initialize connection state flag
         self.latest = {
             "temperature": 0.0,
             "humidity": 0.0,
@@ -45,11 +46,12 @@ class THPController(QObject):
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_data)
-        self.timer.start(3000)
+        self.timer.start(3000) # Start periodic updates
+        self._update_data() # Initial data read attempt
 
     def _update_data(self):
         try:
-            data = read_thp_sensor_data(self.port)
+            data = read_thp_sensor_data(self.port) # Assuming this handles port open/close
             if data:
                 self.latest = data
                 self.readings_label.setText(
@@ -57,37 +59,43 @@ class THPController(QObject):
                     f"Humidity: {data['humidity']:.1f} % | "
                     f"Pressure: {data['pressure']:.1f} hPa"
                 )
+                if not self._connected: # If was previously disconnected
+                    self.status_signal.emit(f"THP sensor connected on {self.port}")
+                self._connected = True
             else:
-                # Update the label to show connection issue
-                self.readings_label.setText("Sensor not connected - check COM port")
-                self.status_signal.emit(f"THP sensor read failed on port {self.port}")
+                if self._connected: # If was previously connected
+                    self.status_signal.emit(f"THP sensor read failed/disconnected on port {self.port}")
+                self.readings_label.setText(f"Sensor not responding on {self.port}")
+                self._connected = False
         except Exception as e:
-            self.readings_label.setText("Sensor error - check connection")
-            self.status_signal.emit(f"THP sensor error: {e}")
+            if self._connected: # If was previously connected
+                self.status_signal.emit(f"THP sensor error: {e}")
+            self.readings_label.setText(f"Sensor error on {self.port}")
+            self._connected = False
 
     def get_latest(self):
         return self.latest
 
     def is_connected(self):
-        return self.latest["temperature"] != 0.0
+        return self._connected # Use the internal flag
 
     def reconnect(self):
-        """Try to reconnect to the THP sensor"""
-        self.status_signal.emit(f"Attempting to reconnect THP sensor on {self.port}")
-        data = read_thp_sensor_data(self.port)
-        if data:
-            self.latest = data
-            self.readings_label.setText(
-                f"Temp: {data['temperature']:.1f} °C | "
-                f"Humidity: {data['humidity']:.1f} % | "
-                f"Pressure: {data['pressure']:.1f} hPa"
-            )
-            self.status_signal.emit("THP sensor reconnected successfully")
-            return True
-        else:
-            self.readings_label.setText("Reconnect failed - check COM port")
-            self.status_signal.emit(f"THP sensor reconnect failed on port {self.port}")
-            return False
+        """Try to read data from the THP sensor again."""
+        self.status_signal.emit(f"THP: Attempting to read from {self.port}...")
+        self._update_data() # This already updates status and UI based on success/failure
+        if self._connected:
+            self.status_signal.emit(f"THP: Reconnected/Read successful on {self.port}")
+        # else: # _update_data would have emitted a failure status
+            # self.status_signal.emit(f"THP: Reconnect/Read failed on {self.port}")
+        return self._connected
+
+    def disconnect(self):
+        """Stops periodic updates for the THP sensor."""
+        if self.timer.isActive():
+            self.timer.stop()
+        self._connected = False
+        self.readings_label.setText("THP updates stopped.")
+        self.status_signal.emit(f"THP sensor updates stopped for port {self.port}.")
 
 
 

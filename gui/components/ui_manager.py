@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QObject
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox # Moved QMessageBox import here
 
 class UIManager(QObject):
     def __init__(self, parent=None):
@@ -151,7 +151,7 @@ class UIManager(QObject):
     
     def show_error_message(self, title, message):
         """Show an error message dialog"""
-        from PyQt5.QtWidgets import QMessageBox
+        # from PyQt5.QtWidgets import QMessageBox # Moved to top
         error_box = QMessageBox(self.main_window)
         error_box.setIcon(QMessageBox.Critical)
         error_box.setWindowTitle(title)
@@ -161,7 +161,7 @@ class UIManager(QObject):
     
     def show_info_message(self, title, message):
         """Show an information message dialog"""
-        from PyQt5.QtWidgets import QMessageBox
+        # from PyQt5.QtWidgets import QMessageBox # Moved to top
         info_box = QMessageBox(self.main_window)
         info_box.setIcon(QMessageBox.Information)
         info_box.setWindowTitle(title)
@@ -171,7 +171,7 @@ class UIManager(QObject):
     
     def show_confirmation_dialog(self, title, message):
         """Show a confirmation dialog and return True if confirmed"""
-        from PyQt5.QtWidgets import QMessageBox
+        # from PyQt5.QtWidgets import QMessageBox # Moved to top
         confirm_box = QMessageBox(self.main_window)
         confirm_box.setIcon(QMessageBox.Question)
         confirm_box.setWindowTitle(title)
