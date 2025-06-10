@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Modules to be tested
+# Modules to be tested 
 from drivers import spectrometer as drv_spectrometer
 from drivers.avaspec import AvsIdentityType, MeasConfigType # Import structures for type checking if needed
 
