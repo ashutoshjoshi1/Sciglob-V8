@@ -6,7 +6,7 @@ from PyQt5.QtCore import QTimer, Qt
 from gui.main_window import MainWindow
 
 def main():
-    # Set high DPI attributes BEFORE creating QApplication
+    #Set high DPI attributes BEFORE creating QApplication
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     
