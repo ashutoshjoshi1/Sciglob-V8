@@ -1,8 +1,7 @@
 import math, datetime
-import numpy as np # Moved numpy import to top
+import numpy as np 
 from astral import LocationInfo
 from astral.sun import azimuth, elevation
-# from mpl_toolkits.mplot3d.art3d import Poly3DCollection # This import is unused
 
 def compute_sun_vector(lat,lon):
     now=datetime.datetime.now(datetime.timezone.utc)
