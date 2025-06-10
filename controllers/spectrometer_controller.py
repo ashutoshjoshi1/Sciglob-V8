@@ -513,7 +513,7 @@ class SpectrometerController(QObject):
                 # Removed "if not callable(self.parent)" check
                 if not hasattr(self.parent, '_integration_changing'):
                     setattr(self.parent, '_integration_changing', True)
-            else:
+                else:
                     self.parent._integration_changing = True
         
         code = prepare_measurement(self.handle, self.npix, 
