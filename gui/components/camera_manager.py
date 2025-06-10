@@ -80,8 +80,11 @@ class CameraManager(QObject):
             self.main_window.cam_label.setPixmap(pixmap)
             self.main_window.cam_label.setAlignment(Qt.AlignCenter)
         
-        except Exception:
-            # Silently ignore all other errors to prevent UI disruption
+        except Exception as e:
+            # Log other errors instead of silently ignoring, to aid debugging.
+            # In a production app, this might go to a logging framework.
+            print(f"Error in update_camera_feed: {e}")
+            # Optionally, could set a placeholder image or message on cam_label on error.
             pass
     
     def release_camera(self):

@@ -26,47 +26,66 @@ class FilterWheelCommandThread(QThread):
             pos = None
             if response:
                 data = response.decode('ascii', errors='ignore').strip()
-                # Parse position from command or response
-                if self.command == "?":
-                    # For query command, try to parse position from response
-                    try:
-                        pos = int(data) if data.isdigit() else None
-                    except ValueError:
-                        pos = None
-                else:
-                    # For move/reset commands, extract from command
-                    cmd = self.command
-                    if cmd.startswith('F') and len(cmd) >= 2:
-                        if cmd.endswith('r'):  # reset command like F1r
-                            pos = 1  # Reset always goes to position 1
-                        else:
-                            # Extract digits after 'F1' (e.g., F12 → pos=2)
-                            try:
-                                pos = int(cmd[2])
-                            except (ValueError, IndexError):
-                                pos = None
-                # Determine a user-friendly status message
-                if pos is not None:
-                    if self.command.endswith('r'):  # reset command
-                        msg = f"Filter wheel reset to position {pos}."
-                    elif self.command == "?":       # query command
+
+                # Try to parse position from the (potentially queried) response data first
+                try:
+                    pos = int(data) if data.isdigit() else None
+                except ValueError:
+                    pos = None
+
+                # Determine user-friendly status message
+                if self.command == "?": # Original command was a query
+                    if pos is not None:
                         msg = f"Filter wheel is at position {pos}."
-                    else:                           # move command like F12, F15
-                        msg = f"Filter wheel moved to position {pos}."
-                else:
-                    # Received a response that didn't contain a position
-                    msg = f"Received: {data}"
+                    else:
+                        msg = f"Filter wheel query response: '{data}' (could not parse position)."
+                else: # Original command was a move/reset
+                    if pos is not None: # Position successfully parsed from query after move/reset
+                        msg = f"Filter wheel operation '{self.command}' completed, current position: {pos}."
+                    else:
+                        # If query after move/reset failed to yield a parsable position,
+                        # we can fall back to assuming position from command, or report uncertainty.
+                        # For now, let's report the response and the attempted command.
+                        msg = f"Filter wheel command '{self.command}' sent. Query response: '{data}'."
+                        # Fallback: try to infer from command if query response was not useful
+                        if self.command.startswith('F') and len(self.command) >= 2:
+                            if self.command.endswith('r'):
+                                pos = 1 # Reset assumes position 1
+                                msg += f" Assuming position {pos} after reset."
+                            elif len(self.command) == 3 and self.command[2].isdigit():
+                                try:
+                                    pos = int(self.command[2])
+                                    msg += f" Assuming position {pos} from command."
+                                except ValueError:
+                                    pass # pos remains None
             else:
-                # No response (e.g. timeout)
-                msg = "No response from filter wheel (timeout). Check connections and try again."
+                # No response (e.g. timeout) from the position query
+                pos = None # Ensure pos is None
+                if self.command == "?":
+                    msg = "No response to filter wheel query (timeout)."
+                else: # Move/reset command was sent, but position query afterwards timed out
+                    msg = f"Command '{self.command}' sent, but no response to position query (timeout)."
+                    # Fallback: try to infer from command if query response timed out
+                    if self.command.startswith('F') and len(self.command) >= 2:
+                        if self.command.endswith('r'):
+                            pos = 1
+                            msg += f" Assuming position {pos} after reset."
+                        elif len(self.command) == 3 and self.command[2].isdigit():
+                            try:
+                                pos = int(self.command[2])
+                                msg += f" Assuming position {pos} from command."
+                            except ValueError:
+                                pass # pos remains None
             # (Do not close the port here to keep connection alive)
         except Exception as e:
-            pos = None
+            pos = None # Ensure pos is None on exception
             msg = f"Serial error: {e}"
-            try:
-                self.serial.close()  # ensure port is closed on error
-            except: 
-                pass
+            # The thread should not close the serial port it received from the controller.
+            # The controller is responsible for managing the port's lifecycle.
+            # try:
+            #     self.serial.close()
+            # except:
+            #     pass
         # Emit the result (position may be None if failed or unknown)
         self.result_signal.emit(pos, msg)
 

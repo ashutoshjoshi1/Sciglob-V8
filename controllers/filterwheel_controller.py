@@ -33,7 +33,7 @@ class FilterWheelController(QObject):
         conn_layout.addWidget(self.port_combo)
 
         self.connect_btn = QPushButton("Connect")
-        self.connect_btn.clicked.connect(self.connect)
+        self.connect_btn.clicked.connect(self.toggle_connection) # Changed to toggle_connection
         conn_layout.addWidget(self.connect_btn)
 
         pos_label = QLabel("Pos:")
@@ -93,32 +93,57 @@ class FilterWheelController(QObject):
         self.current_position = None
 
         # Auto-connect on startup
-        self.connect()
+        self.connect() # Initial attempt to connect
+
+    def toggle_connection(self):
+        """Toggles the connection state."""
+        if not self._connected:
+            self.connect()
+        else:
+            self.disconnect() # This will update button text to "Connect"
 
     def connect(self):
-        """Connect to the filter wheel"""
-        self.connect_btn.setEnabled(False)
-        th = FilterWheelConnectThread(self.port_combo.currentText(), parent=self)
+        """Connects to the filter wheel."""
+        if self._connected: # Should not happen if toggle_connection is used properly
+            self.status_signal.emit("Already connected. Please disconnect first.")
+            return
+
+        self.connect_btn.setEnabled(False) # Disable while attempting to connect
+        self.connect_btn.setText("Connecting...")
+        self.status_signal.emit(f"Attempting to connect to {self.port_combo.currentText()}...")
+
+        port_name = self.port_combo.currentText()
+        th = FilterWheelConnectThread(port_name, parent=self)
         th.result_signal.connect(self._on_connect)
         th.start()
 
     def _on_connect(self, ser, msg):
-        self.status_signal.emit(msg)
-        self.connect_btn.setEnabled(True)
-        if ser:
+        self.status_signal.emit(msg) # Display message from connect thread
+
+        if ser: # Successfully connected
             self.serial = ser
             self._connected = True
+            self.connect_btn.setText("Disconnect")
+            self.connect_btn.setEnabled(True)
             self.send_btn.setEnabled(True)
             self.open_btn.setEnabled(True)
             self.opaque_btn.setEnabled(True)
             self.diff_btn.setEnabled(True)
-            self._send("F1r")  # Reset to position 1
-        else:
+            self.status_signal.emit(f"Connected to filter wheel on {self.serial.port}.")
+            self._send("F1r")  # Reset to position 1 (Opaque)
+        else: # Connection failed
             self._connected = False
+            self.serial = None
+            self.connect_btn.setText("Connect") # Reset text
+            self.connect_btn.setEnabled(True) # Re-enable to allow another attempt
             self.send_btn.setEnabled(False)
             self.open_btn.setEnabled(False)
             self.opaque_btn.setEnabled(False)
             self.diff_btn.setEnabled(False)
+            self.pos_label.setText("--")
+            self.current_position = None
+            # msg already contains the error from FilterWheelConnectThread
+            # self.status_signal.emit(f"Failed to connect to filter wheel. {msg}")
 
     def set_open_filter(self):
         """Set filter wheel to an open filter position (2, 3, or 4)"""
@@ -166,26 +191,75 @@ class FilterWheelController(QObject):
         self.diff_btn.setEnabled(True)
         self.status_signal.emit(msg)
 
-        if self.last:
-            if self.last == "F1r":
-                self.pos_label.setText("1")
+        # Prefer the position reported by the command thread if available and valid
+        if pos is not None:
+            try:
+                # Ensure pos is an integer, as it might come from serial response
+                reported_pos = int(pos)
+                if 1 <= reported_pos <= 6: # Assuming 6 positions for the filter wheel
+                    self.current_position = reported_pos
+                    self.pos_label.setText(str(reported_pos))
+                    self.status_signal.emit(f"Filter wheel position confirmed: {reported_pos}. {msg}")
+                else:
+                    self.status_signal.emit(f"Filter wheel reported invalid position: {pos}. {msg}")
+                    # Optionally, try to infer from self.last or mark as unknown
+            except ValueError:
+                self.status_signal.emit(f"Filter wheel reported non-integer position: {pos}. {msg}")
+                # Optionally, try to infer from self.last or mark as unknown
+
+        elif self.last: # Fallback to command-based assumption if pos is None or invalid
+            self.status_signal.emit(f"Position not confirmed by device, using command assumption. {msg}")
+            if self.last == "F1r": # Reset command
                 self.current_position = 1
+                self.pos_label.setText("1")
             elif self.last.startswith("F1") and len(self.last) == 3 and self.last[2].isdigit():
-                position = int(self.last[2])
-                self.pos_label.setText(str(position))
-                self.current_position = position
-            else:
-                if pos is not None:
-                    self.pos_label.setText(str(pos))
-                    self.current_position = pos
-        self.last = None
+                # Specific position command like "F12"
+                try:
+                    position_val = int(self.last[2])
+                    if 1 <= position_val <= 6:
+                        self.current_position = position_val
+                        self.pos_label.setText(str(position_val))
+                    else:
+                        self.pos_label.setText("N/A") # Commanded invalid position
+                        self.current_position = None
+                except ValueError:
+                    self.pos_label.setText("Err")
+                    self.current_position = None
+            else: # Unknown command structure, can't infer position
+                 self.pos_label.setText("?")
+                 self.current_position = None # Or keep old one, depending on desired behavior
+        else: # No pos from device and no self.last (should not happen if _send is used)
+            self.pos_label.setText("??")
+            self.current_position = None
+
+        self.last = None # Clear the last command sent
 
     def get_position(self):
-        try:
-            return int(self.pos_label.text())
-        except:
-            return self.current_position or 0
+        """Returns the current known position of the filter wheel."""
+        return self.current_position # self.current_position is None if unknown, or an int
 
     def is_connected(self):
         return self._connected
 
+    def disconnect(self):
+        """Disconnects from the serial port."""
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.close()
+                self.status_signal.emit("Filter wheel disconnected.")
+            except Exception as e:
+                self.status_signal.emit(f"Error closing serial port: {e}")
+
+        self._connected = False
+        self.serial = None
+
+        # Update UI
+        self.connect_btn.setText("Connect") # Reset button text
+        self.connect_btn.setEnabled(True) # Allow attempting to reconnect
+
+        self.send_btn.setEnabled(False)
+        self.open_btn.setEnabled(False)
+        self.opaque_btn.setEnabled(False)
+        self.diff_btn.setEnabled(False)
+        self.pos_label.setText("--")
+        self.current_position = None

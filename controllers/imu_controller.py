@@ -39,7 +39,7 @@ class IMUController(QObject):
         
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setMaximumWidth(70)
-        self.connect_btn.clicked.connect(self.connect)
+        self.connect_btn.clicked.connect(self.toggle_connection) # Changed to toggle
         port_layout.addWidget(self.connect_btn)
         
         main_layout.addLayout(port_layout)
@@ -85,20 +85,13 @@ class IMUController(QObject):
         self.update_timer.timeout.connect(self._refresh)
         self.update_timer.start(100)
 
-    def _update_cam(self):
-        if self.cam.isOpened():
-            ret, frame = self.cam.read()
-            if ret:
-                # Resize the frame to fit the larger display area
-                frame = cv2.resize(frame, (640, 480))
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = frame.shape
-                img = QImage(frame.data, w, h, ch * w, QImage.Format_RGB888)
-                self.cam_label.setPixmap(QPixmap.fromImage(img).scaled(
-                    self.cam_label.width(), self.cam_label.height(),
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    # Removed _update_cam method as it was unused and seemed to be from a different controller.
 
     def _refresh(self):
+        if not self._connected: # Don't try to refresh if not connected
+            self.data_label.setText("Not connected")
+            return
+
         r, p, y = self.latest['rpy']
         lat = self.latest['latitude']
         lon = self.latest['longitude']
@@ -125,6 +118,71 @@ class IMUController(QObject):
 
     def is_connected(self):
         return self._connected
+
+    def toggle_connection(self):
+        """Toggles the IMU connection."""
+        if self._connected:
+            self.disconnect()
+        else:
+            self.connect()
+
+    def connect(self):
+        if self._connected:
+            # self.status_signal.emit("IMU already connected.") # Not strictly needed if toggle used
+            return
+
+        self.connect_btn.setText("Connecting...")
+        self.connect_btn.setEnabled(False)
+        port = self.port_combo.currentText().strip()
+        baud = int(self.baud_combo.currentText())
+        self.status_signal.emit(f"IMU: Connecting to {port}@{baud}...")
+
+        try:
+            self.serial = serial.Serial(port, baud, timeout=1)
+        except Exception as e:
+            self.status_signal.emit(f"IMU connection error: {e}")
+            self.connect_btn.setText("Connect")
+            self.connect_btn.setEnabled(True)
+            return
+
+        self._connected = True
+        self.connect_btn.setText("Disconnect")
+        self.connect_btn.setEnabled(True)
+        self.status_signal.emit(f"IMU connected on {port}@{baud}")
+
+        # Ensure latest is reset before starting thread
+        self.latest = {'rpy': (0,0,0), 'latitude': 0, 'longitude': 0, 'temperature': 0, 'pressure': 0, 'roll':0, 'pitch':0, 'yaw':0}
+
+        # Start the reading thread and the UI update timer
+        self.stop_evt = start_imu_read_thread(self.serial, self.latest)
+        if not hasattr(self, 'update_timer'):
+            self.update_timer = QTimer(self)
+            self.update_timer.timeout.connect(self._refresh)
+        self.update_timer.start(100)
+
+    def disconnect(self):
+        """Disconnects the IMU, stops the reading thread and timer."""
+        self.status_signal.emit("IMU: Disconnecting...")
+        if hasattr(self, 'stop_evt') and self.stop_evt:
+            self.stop_evt.set() # Signal the thread to stop
+
+        if hasattr(self, 'update_timer') and self.update_timer:
+            self.update_timer.stop()
+
+        if self.serial and self.serial.is_open:
+            try:
+                self.serial.close()
+            except Exception as e:
+                self.status_signal.emit(f"IMU: Error closing serial port: {e}")
+
+        self._connected = False
+        self.serial = None
+        self.stop_evt = None
+
+        self.connect_btn.setText("Connect")
+        self.connect_btn.setEnabled(True)
+        self.data_label.setText("Not connected")
+        self.status_signal.emit("IMU: Disconnected.")
 
 
 
