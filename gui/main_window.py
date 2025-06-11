@@ -378,7 +378,7 @@ class MainWindow(QMainWindow):
             (self.imu_ctrl, "IMU", self.imu_ctrl.is_connected),
             (self.spec_ctrl, "Spectrometer", self.spec_ctrl.is_ready),
             (self.temp_ctrl, "Temperature", lambda: hasattr(self.temp_ctrl, 'tc')),
-            (self.thp_ctrl, "THP Sensor", lambda: self.thp_ctrl.is_connected() if self.thp_ctrl else False)
+            (self.thp_ctrl, "THP Sensor (Spec Enclosure)", lambda: self.thp_ctrl.is_connected() if self.thp_ctrl else False)
         ]:
             if ctrl is None: # Controller might have failed to initialize
                 col = "#aaaaaa" # Grey out if controller is None

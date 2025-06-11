@@ -31,7 +31,7 @@ class TempController(QObject):
         layout.addWidget(self.connect_btn, 0, 2)
         
         # Current temperature with bold label and larger font
-        temp_label = QLabel("Current:")
+        temp_label = QLabel("Current TEC:")
         temp_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(temp_label, 1, 0)
         
@@ -40,7 +40,7 @@ class TempController(QObject):
         layout.addWidget(self.temp_display, 1, 1)
         
         # Add auxiliary temperature display
-        aux_temp_label = QLabel("Auxiliary:")
+        aux_temp_label = QLabel("Spec Temp:")
         aux_temp_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(aux_temp_label, 2, 0)
         
