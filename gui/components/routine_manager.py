@@ -134,6 +134,8 @@ class RoutineManager(QObject):
         self.routine_timer.timeout.connect(self._execute_next_command)
         self.data_saving_started_by_routine = False
         self.final_data = None
+        self.current_routine_name = None
+        self.current_routine_start_time_str = None
         
         # Set up routines directory
         self.routines_dir = os.path.join(os.path.dirname(__file__), "..", "..", "routines")
@@ -255,6 +257,9 @@ class RoutineManager(QObject):
             self._load_routine_from_file(file_path)
             # Store the current routine path
             self.current_routine = file_path
+            # Extract routine name from file_path
+            base_name = os.path.basename(file_path)
+            self.current_routine_name, _ = os.path.splitext(base_name)
 
     def load_preset_routine(self, preset_name):
         """Load a preset routine by name"""
@@ -262,6 +267,8 @@ class RoutineManager(QObject):
             file_path = self.presets[preset_name]
             if os.path.exists(file_path):
                 self._load_routine_from_file(file_path)
+                # Set routine name based on preset_name, ensuring it's directory-friendly
+                self.current_routine_name = preset_name.replace(" ", "_").replace("/", "_")
             else:
                 self.main_window.statusBar().showMessage(f"Preset file not found: {file_path}")
                 if hasattr(self.main_window, 'routine_status'):
@@ -304,6 +311,9 @@ class RoutineManager(QObject):
         if self.routine_running:
             self.stop_routine()
             return
+        
+        # Set routine start time string
+        self.current_routine_start_time_str = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
         
         # Reset plot creation flag when starting a new routine
         self._plot_created = False
@@ -721,27 +731,31 @@ class RoutineManager(QObject):
                             self.main_window.spec_ctrl.stop_measurement()
                         else:
                             self.main_window.statusBar().showMessage("Spectrometer controller not available")
-                    elif parts[1].lower() == "save":
-                        if hasattr(self.main_window, 'spec_ctrl') and hasattr(self.main_window.spec_ctrl, 'intens'):
-                            spectrum_data = self.main_window.spec_ctrl.intens
-                            if spectrum_data and hasattr(self.main_window, 'data_logger'):
-                                self.main_window.statusBar().showMessage("Saving current spectrometer data...")
-                                metadata = {
-                                    "routine_command": command,
-                                    "timestamp": QDateTime.currentDateTime().toString(Qt.ISODate)
-                                }
-                                # save_final_data expects data as a list/array of intensities
-                                success = self.main_window.data_logger.save_final_data(data=spectrum_data, metadata=metadata)
-                                if success:
-                                    self.main_window.statusBar().showMessage("Spectrometer data saved by routine.")
-                                else:
-                                    self.main_window.statusBar().showMessage("Failed to save spectrometer data by routine.")
-                            elif not spectrum_data:
-                                self.main_window.statusBar().showMessage("No spectrometer data available to save.")
+                    elif parts[1].lower() == "save_snapshot": # Updated command name
+                        if len(parts) > 2:
+                            snapshot_filename = parts[2]
+                            if self.main_window.spec_ctrl:
+                                self.main_window.statusBar().showMessage(f"Saving spectrometer snapshot: {snapshot_filename}")
+                                self.main_window.spec_ctrl.save(
+                                    filename=snapshot_filename,
+                                    routine_name=self.current_routine_name,
+                                    routine_start_time_str=self.current_routine_start_time_str
+                                )
                             else:
-                                self.main_window.statusBar().showMessage("DataLogger not available.")
+                                self.main_window.statusBar().showMessage("Spectrometer controller not available for saving snapshot.")
                         else:
-                            self.main_window.statusBar().showMessage("Spectrometer controller or data not available.")
+                            print(f"Spectrometer SAVE_SNAPSHOT command requires a filename: {command}")
+                            self.main_window.statusBar().showMessage("SAVE_SNAPSHOT command needs a filename.")
+                    elif parts[1].lower() == "save": # Kept old "save" for compatibility, maps to new save without specific filename
+                        if self.main_window.spec_ctrl:
+                             self.main_window.statusBar().showMessage("Saving current spectrometer data (routine context)...")
+                             self.main_window.spec_ctrl.save(
+                                routine_name=self.current_routine_name,
+                                routine_start_time_str=self.current_routine_start_time_str
+                                # Filename will be auto-generated by spec_ctrl.save if None
+                             )
+                        else:
+                            self.main_window.statusBar().showMessage("Spectrometer controller not available.")
                     else:
                         print(f"Invalid spectrometer command: {command}")
                 else:
