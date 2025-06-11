@@ -2,9 +2,11 @@
 
 # Initial state: Assuming motor is at 0 degrees and filter is Opaque (Position 1)
 # If not, these commands might be needed at the start:
-# motor move 0
-# filter position 1 # Opaque
-# WAIT 2000 # Wait for initial positioning
+spectrometer start
+motor move 0
+filter position 1 # Opaque
+WAIT 2000
+# Wait for initial positioning
 
 # Angle 0
 LOG Starting Angle 0 sequence

@@ -196,7 +196,10 @@ class MainWindow(QMainWindow):
         
         self.preset_combo = QComboBox()
         self.preset_combo.addItem("Custom...")
-        self.preset_combo.addItems(["Standard Scan", "Dark Reference", "White Reference", "Filter Sequence", "Temperature Test"])
+        if self.routine_manager and hasattr(self.routine_manager, 'presets'):
+            preset_names = list(self.routine_manager.presets.keys())
+            # preset_names.sort() # Uncomment if alphabetical sorting is desired
+            self.preset_combo.addItems(preset_names)
         self.preset_combo.currentIndexChanged.connect(self.preset_selected)
         preset_layout.addWidget(self.preset_combo)
         

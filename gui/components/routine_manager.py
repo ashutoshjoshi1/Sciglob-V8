@@ -144,106 +144,19 @@ class RoutineManager(QObject):
         
         # Set up presets
         self.presets = {
-            "Standard Scan": os.path.join(self.routines_dir, "standard_scan.txt"),
-            "Dark Reference": os.path.join(self.routines_dir, "dark_reference.txt"),
-            "White Reference": os.path.join(self.routines_dir, "white_reference.txt"),
-            "Filter Sequence": os.path.join(self.routines_dir, "filter_sequence.txt"),
-            "Temperature Test": os.path.join(self.routines_dir, "temperature_test.txt")
+            "Open-Opaque": os.path.join(self.routines_dir, "OO.txt"),
+            "Open-Opaque-Diff": os.path.join(self.routines_dir, "OOD.txt")
         }
         
         # Create default routines if they don't exist
-        self._create_default_routines()
+        # Commenting out or removing _create_default_routines() call if it's no longer needed
+        # or if it conflicts with the new preset structure.
+        # For now, let's assume it might still be useful for other non-preset routines,
+        # or should be updated/removed in a subsequent step if truly obsolete.
+        # self._create_default_routines() # Re-evaluate this call later if necessary
 
-    def _create_default_routines(self):
-        """Create default routine files if they don't exist"""
-        # Standard Scan routine
-        standard_scan = os.path.join(self.routines_dir, "standard_scan.txt")
-        if not os.path.exists(standard_scan):
-            with open(standard_scan, 'w') as f:
-                f.write("# Standard Scan Routine\n")
-                f.write("log Starting Standard Scan\n")
-                f.write("filter position 2\n")
-                f.write("wait 1000\n")
-                f.write("motor move 0\n")
-                f.write("wait 2000\n")
-                f.write("# Set integration time to 100ms\n")
-                f.write("integration 100\n")
-                f.write("wait 1000\n")
-                f.write("spectrometer start\n")
-                f.write("wait 5000\n")
-                f.write("spectrometer save\n")
-                f.write("log Standard Scan Complete\n")
-    
-        # PO Routine (Position-Optics)
-        po_routine = os.path.join(self.routines_dir, "po_routine.txt")
-        if not os.path.exists(po_routine):
-            with open(po_routine, 'w') as f:
-                f.write("# Position-Optics (PO) Routine\n")
-                f.write("log Starting PO Routine\n")
-                
-                # Loop through filter positions
-                for filter_pos in [1, 2]:  # 1=Opaque, 2=Open
-                    f.write(f"filter position {filter_pos}\n")
-                    f.write("wait 1000\n")
-                    
-                    # Loop through motor angles
-                    for angle in [0, 45, 90, 135, 180]:
-                        f.write(f"motor move {angle}\n")
-                        f.write("wait 2000\n")  # Wait for motor to move
-                        f.write("spectrometer start\n")
-                        f.write("wait 3000\n")  # Collect data for 3 seconds
-                        f.write("spectrometer save\n")
-                        f.write("wait 1000\n")  # Wait before next position
-        
-            f.write("log PO Routine Complete\n")
-    
-        # Create other default routines as needed
-        self._create_simple_routine("dark_reference.txt", "Dark Reference", 1)
-        self._create_simple_routine("white_reference.txt", "White Reference", 2)
-
-        # Integration Time Test routine
-        integration_test = os.path.join(self.routines_dir, "integration_test.txt")
-        if not os.path.exists(integration_test):
-            with open(integration_test, 'w') as f:
-                f.write("# Integration Time Test Routine\n")
-                f.write("log Starting Integration Time Test\n")
-                f.write("filter position 2\n")  # Open filter
-                f.write("wait 1000\n")
-                f.write("motor move 90\n")  # Position at 90 degrees
-                f.write("wait 2000\n")
-                
-                # Test different integration times
-                integration_times = [10, 50, 100, 500, 1000]
-                for it in integration_times:
-                    f.write(f"# Set integration time to {it}ms\n")
-                    f.write(f"integration {it}\n")
-                    f.write("wait 1000\n")
-                    f.write("spectrometer start\n")
-                    f.write("wait 3000\n")
-                    f.write("plot\n")  # Take a snapshot for comparison
-                    f.write("wait 1000\n")
-                    f.write(f"log Completed measurement with {it}ms integration time\n")
-                
-                f.write("log Integration Time Test Complete\n")
-    
-        # Add the new routine to presets
-        self.presets["Integration Test"] = integration_test
-
-    def _create_simple_routine(self, filename, name, filter_pos):
-        """Create a simple routine file with the given name and filter position"""
-        filepath = os.path.join(self.routines_dir, filename)
-        if not os.path.exists(filepath):
-            with open(filepath, 'w') as f:
-                f.write(f"# {name} Routine\n")
-                f.write(f"log Starting {name}\n")
-                f.write(f"filter position {filter_pos}\n")
-                f.write("wait 1000\n")
-                f.write("motor move 0\n")
-                f.write("wait 2000\n")
-                f.write("spectrometer start\n")
-                f.write("wait 5000\n")
-                f.write("spectrometer save\n")
-                f.write(f"log {name} Complete\n")
+    # The _create_default_routines and _create_simple_routine methods are no longer needed
+    # with the simplified preset structure. They are removed.
 
     def load_routine_file(self):
         """Load a routine file from disk"""

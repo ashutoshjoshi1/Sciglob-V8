@@ -120,7 +120,7 @@ class SpectrometerController(QObject):
         self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.XAxis, enable=False)
         self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
         self.plot_px.getViewBox().setAutoVisible(x=False, y=True)
-        self.plot_px.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_px.showGrid(x=False, y=False, alpha=0.3)
 
         # Add a more attractive style with optimized rendering
         self.curve_px = self.plot_px.plot([], [], pen=pg.mkPen('#f44336', width=2),
