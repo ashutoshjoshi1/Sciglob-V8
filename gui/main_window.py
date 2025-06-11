@@ -376,7 +376,7 @@ class MainWindow(QMainWindow):
     def _update_indicators(self):
         """Update groupbox titles with connection status (green if connected, red if not)"""
         for ctrl, title, ok_fn in [
-            (self.motor_ctrl, "Motor", self.motor_ctrl.is_connected),
+            (self.motor_ctrl, "Polarizer", self.motor_ctrl.is_connected),
             (self.filter_ctrl, "Filter Wheel", self.filter_ctrl.is_connected),
             (self.imu_ctrl, "IMU", self.imu_ctrl.is_connected),
             (self.spec_ctrl, "Spectrometer", self.spec_ctrl.is_ready),
