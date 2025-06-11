@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFileDialog
 from PyQt5.QtCore import QDateTime, QTimer, pyqtSignal, QObject
+from datetime import datetime
 
 class ResultsPlotDialog(QDialog):
     """Dialog to display the results plot after routine completion"""
@@ -304,6 +305,7 @@ class RoutineManager(QObject):
 
     def run_routine(self):
         """Start running the loaded routine"""
+        print("ROUTINE_MANAGER: run_routine() CALLED")
         if not self.routine_commands:
             self.main_window.statusBar().showMessage("No routine loaded")
             return
@@ -355,6 +357,7 @@ class RoutineManager(QObject):
     
     def _execute_next_command(self):
         """Execute the next command in the routine"""
+        print("ROUTINE_MANAGER: _execute_next_command() CALLED")
         if not self.routine_running or self.current_command_index >= len(self.routine_commands):
             self._routine_complete()
             return
@@ -603,6 +606,7 @@ class RoutineManager(QObject):
 
     def _execute_command(self, command):
         """Execute a single command from the routine"""
+        print(f"ROUTINE_MANAGER: _execute_command() CALLED WITH: '{command}'")
         # Split the command into parts
         parts = command.strip().split()
         print(f"Routine command raw parts: {parts}")
@@ -789,7 +793,7 @@ class RoutineManager(QObject):
             elif cmd_type == "camera":
                 print(f"Inside 'camera' block. Checking parts[1]: '{parts[1] if len(parts) > 1 else 'N/A'}', parts[1].lower(): '{parts[1].lower() if len(parts) > 1 else 'N/A'}'")
                 if len(parts) > 2 and parts[1].lower() == "save_image":
-                    filename_token = parts[2]
+                    base_filename_from_routine = parts[2] # e.g., "OOD.jpg"
                     
                     if not self.current_routine_name or not self.current_routine_start_time_str:
                         error_msg = "Cannot save camera image: Routine context (name/start time) not set."
@@ -799,31 +803,38 @@ class RoutineManager(QObject):
                         # Proceed to next command even if context is missing
                         QTimer.singleShot(100, self._execute_next_command)
                     else:
+                        # Generate timestamp
+                        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3] # YYYYMMDD_HHMMSS_ms
+                        
+                        name_part, ext_part = os.path.splitext(base_filename_from_routine)
+                        actual_image_filename = f"{name_part}_{timestamp_str}{ext_part}"
+
                         base_data_dir = "data" # Root directory for all routine data
-                        routine_name_folder = self.current_routine_name.replace(" ", "_").replace("/", "_") # Ensure routine name is fs-friendly
+                        # Ensure routine name is filesystem-friendly for directory creation
+                        routine_name_folder = self.current_routine_name.replace(" ", "_").replace("/", "_")
                         routine_start_time_folder = self.current_routine_start_time_str
                         
-                        # Construct the full path: data/routine_name/routine_start_time/filename_token
+                        # Construct the full path: data/routine_name_folder/routine_start_time_folder/actual_image_filename
                         target_dir = os.path.join(base_data_dir, routine_name_folder, routine_start_time_folder)
                         # The CameraManager.save_image method is responsible for os.makedirs(target_dir, exist_ok=True)
                         
-                        full_path_filename = os.path.join(target_dir, filename_token)
+                        full_path_filename = os.path.join(target_dir, actual_image_filename)
                         
                         if hasattr(self.main_window, 'camera_manager') and self.main_window.camera_manager is not None:
                             print(f"Attempting to save camera image to: {full_path_filename}")
                             if hasattr(self.main_window, 'statusBar'):
-                                self.main_window.statusBar().showMessage(f"Saving camera image: {filename_token}...")
+                                self.main_window.statusBar().showMessage(f"Saving camera image: {actual_image_filename}...")
                             
                             success = self.main_window.camera_manager.save_image(full_path_filename)
                             
                             if success:
-                                success_msg = f"Camera image saved: {full_path_filename}"
-                                print(success_msg)
+                                success_msg = f"Camera image saved: {actual_image_filename}" # Log with actual filename
+                                print(f"Successfully saved camera image: {full_path_filename}")
                                 if hasattr(self.main_window, 'statusBar'):
                                     self.main_window.statusBar().showMessage(success_msg)
                             else:
-                                fail_msg = f"Failed to save camera image: {full_path_filename}"
-                                print(fail_msg)
+                                fail_msg = f"Failed to save camera image: {actual_image_filename}" # Log with actual filename
+                                print(f"Failed to save camera image: {full_path_filename}")
                                 if hasattr(self.main_window, 'statusBar'):
                                     self.main_window.statusBar().showMessage(fail_msg)
                         else:

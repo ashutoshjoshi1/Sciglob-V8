@@ -2,55 +2,55 @@
 
 # Initial state: Assuming motor is at 0 degrees and filter is Opaque (Position 1)
 # If not, these commands might be needed at the start:
-motor move 0
-filter position 1
-wait 2000 # wait for initial positioning
+# motor move 0
+# filter position 1
+# WAIT 2000 # Wait for initial positioning
 
 # Angle 0
-log Starting Angle 0 sequence
-spectrometer SAVE_SNAPSHOT Opaque_0.csv
+LOG Starting Angle 0 sequence
+SPECTROMETER SAVE_SNAPSHOT Opaque_0.csv
 filter position 2 # Open
-wait 2000
-spectrometer SAVE_SNAPSHOT Open_0.csv
-log Completed Angle 0 sequence
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Open_0.csv
+LOG Completed Angle 0 sequence
 
 # Angle 45
-log Starting Angle 45 sequence
+LOG Starting Angle 45 sequence
 motor move 45
-wait 2000
-spectrometer SAVE_SNAPSHOT Open_45.csv
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Open_45.csv
 filter position 1 # Opaque
-wait 2000
-spectrometer SAVE_SNAPSHOT Opaque_45.csv
-log Completed Angle 45 sequence
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Opaque_45.csv
+LOG Completed Angle 45 sequence
 
 # Angle 90
-log Starting Angle 90 sequence
+LOG Starting Angle 90 sequence
 motor move 90
-wait 2000
-spectrometer SAVE_SNAPSHOT Opaque_90.csv
-filter position 2 # Open
-wait 2000
-spectrometer SAVE_SNAPSHOT Open_90.csv
-log Completed Angle 90 sequence
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Open_90.csv
+filter position 1 # Opaque
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Opaque_90.csv
+LOG Completed Angle 90 sequence
 
 # Angle 135
-log Starting Angle 135 sequence
+LOG Starting Angle 135 sequence
 motor move 135
-wait 2000
-spectrometer SAVE_SNAPSHOT Open_135.csv
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Open_135.csv
 filter position 1 # Opaque
-wait 2000
-spectrometer SAVE_SNAPSHOT Opaque_135.csv
-log Completed Angle 135 sequence
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Opaque_135.csv
+LOG Completed Angle 135 sequence
 
 # Capture camera feed image before finishing
-camera SAVE_IMAGE OO_<Timestamp>.jpg
-log Saved camera image OO_<Timestamp>.jpg
+camera SAVE_IMAGE OO.jpg
+log Saved camera image with timestamp
 
 # End of routine - Optionally return to a known state
-log Routine OO.txt finished. Returning to initial position.
+LOG Routine OO.txt finished. Returning to initial position.
 motor move 0
-wait 2000
+WAIT 2000
 filter position 1 # Opaque
-log System returned to Opaque at 0 degrees.
+LOG System returned to Opaque at 0 degrees.

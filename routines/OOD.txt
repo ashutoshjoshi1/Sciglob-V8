@@ -77,8 +77,8 @@ LOG Saved Diff_135.csv
 LOG Completed Angle 135 sequence for Opaque, Open, and Diff filters.
 
 # Capture camera feed image before finishing
-CAMERA SAVE_IMAGE OOD_<Timestamp>.jpg
-LOG Saved camera image OOD_<Timestamp>.jpg
+CAMERA SAVE_IMAGE OOD.jpg
+LOG Saved camera image with timestamp
 
 # End of routine - Optionally return to a known state
 LOG Routine OOD.txt finished. Returning to initial position.
