@@ -120,7 +120,7 @@ class SpectrometerController(QObject):
         self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.XAxis, enable=False)
         self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
         self.plot_px.getViewBox().setAutoVisible(x=False, y=True)
-        self.plot_px.showGrid(x=False, y=False, alpha=0.3)
+        self.plot_px.showGrid(x=True, y=True, alpha=0.3)
 
         # Add a more attractive style with optimized rendering
         self.curve_px = self.plot_px.plot([], [], pen=pg.mkPen('#f44336', width=2),
@@ -409,9 +409,26 @@ class SpectrometerController(QObject):
         self.apply_btn.setEnabled(False)  # Disable the apply button when measurement stops
         self.status_signal.emit("Measurement stopped")
 
-    def save(self):
-        ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
-        path = os.path.join(self.csv_dir, f"snapshot_{ts}.csv")
+    def save(self, filename=None, routine_name=None, routine_start_time_str=None):
+        # csv_dir is an instance attribute, self.csv_dir
+        
+        path = None # Initialize path
+        
+        if routine_name and routine_start_time_str and filename:
+            target_dir = os.path.join(self.csv_dir, routine_name, routine_start_time_str)
+            os.makedirs(target_dir, exist_ok=True)
+            path = os.path.join(target_dir, filename)
+        elif filename:
+            path = os.path.join(self.csv_dir, filename)
+        else:
+            # Manual snapshot
+            ts = QDateTime.currentDateTime().toString("yyyyMMdd_hhmmss")
+            path = os.path.join(self.csv_dir, f"snapshot_{ts}.csv")
+
+        if not path: # Should not happen if logic is correct, but as a safeguard
+            self.status_signal.emit("Save error: Could not determine save path.")
+            return
+
         try:
             with open(path, 'w') as f:
                 f.write("Wavelength (nm),Intensity\n")
