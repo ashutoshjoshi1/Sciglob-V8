@@ -605,12 +605,14 @@ class RoutineManager(QObject):
         """Execute a single command from the routine"""
         # Split the command into parts
         parts = command.strip().split()
+        print(f"Routine command raw parts: {parts}")
         if not parts:
             # Empty command, skip to next
             QTimer.singleShot(100, self._execute_next_command)
             return
         
         cmd_type = parts[0].lower()
+        print(f"Processing cmd_type: '{cmd_type}', Full parts: {parts}")
         
         try:
             # Log command
@@ -782,6 +784,61 @@ class RoutineManager(QObject):
                 
                 # Continue to next command after a short delay
                 QTimer.singleShot(500, self._execute_next_command)
+
+            # Camera command
+            elif cmd_type == "camera":
+                print(f"Inside 'camera' block. Checking parts[1]: '{parts[1] if len(parts) > 1 else 'N/A'}', parts[1].lower(): '{parts[1].lower() if len(parts) > 1 else 'N/A'}'")
+                if len(parts) > 2 and parts[1].lower() == "save_image":
+                    filename_token = parts[2]
+                    
+                    if not self.current_routine_name or not self.current_routine_start_time_str:
+                        error_msg = "Cannot save camera image: Routine context (name/start time) not set."
+                        print(error_msg)
+                        if hasattr(self.main_window, 'statusBar'):
+                            self.main_window.statusBar().showMessage(error_msg)
+                        # Proceed to next command even if context is missing
+                        QTimer.singleShot(100, self._execute_next_command)
+                    else:
+                        base_data_dir = "data" # Root directory for all routine data
+                        routine_name_folder = self.current_routine_name.replace(" ", "_").replace("/", "_") # Ensure routine name is fs-friendly
+                        routine_start_time_folder = self.current_routine_start_time_str
+                        
+                        # Construct the full path: data/routine_name/routine_start_time/filename_token
+                        target_dir = os.path.join(base_data_dir, routine_name_folder, routine_start_time_folder)
+                        # The CameraManager.save_image method is responsible for os.makedirs(target_dir, exist_ok=True)
+                        
+                        full_path_filename = os.path.join(target_dir, filename_token)
+                        
+                        if hasattr(self.main_window, 'camera_manager') and self.main_window.camera_manager is not None:
+                            print(f"Attempting to save camera image to: {full_path_filename}")
+                            if hasattr(self.main_window, 'statusBar'):
+                                self.main_window.statusBar().showMessage(f"Saving camera image: {filename_token}...")
+                            
+                            success = self.main_window.camera_manager.save_image(full_path_filename)
+                            
+                            if success:
+                                success_msg = f"Camera image saved: {full_path_filename}"
+                                print(success_msg)
+                                if hasattr(self.main_window, 'statusBar'):
+                                    self.main_window.statusBar().showMessage(success_msg)
+                            else:
+                                fail_msg = f"Failed to save camera image: {full_path_filename}"
+                                print(fail_msg)
+                                if hasattr(self.main_window, 'statusBar'):
+                                    self.main_window.statusBar().showMessage(fail_msg)
+                        else:
+                            error_msg = "Camera manager not available. Cannot save image."
+                            print(error_msg)
+                            if hasattr(self.main_window, 'statusBar'):
+                                self.main_window.statusBar().showMessage(error_msg)
+                        
+                        # Proceed to the next command after attempting to save the image
+                        QTimer.singleShot(500, self._execute_next_command)
+                else:
+                    print(f"Invalid camera command structure: {command}")
+                    if hasattr(self.main_window, 'statusBar'):
+                        self.main_window.statusBar().showMessage(f"Invalid camera command structure: {command}")
+                    QTimer.singleShot(100, self._execute_next_command)
             
             # Unknown command
             else:

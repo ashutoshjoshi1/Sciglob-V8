@@ -4,49 +4,53 @@
 # If not, these commands might be needed at the start:
 motor move 0
 filter position 1
-WAIT 2000 # Wait for initial positioning
+wait 2000 # wait for initial positioning
 
 # Angle 0
-LOG Starting Angle 0 sequence
-SPECTROMETER SAVE_SNAPSHOT Opaque_0.csv
+log Starting Angle 0 sequence
+spectrometer SAVE_SNAPSHOT Opaque_0.csv
 filter position 2 # Open
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Open_0.csv
-LOG Completed Angle 0 sequence
+wait 2000
+spectrometer SAVE_SNAPSHOT Open_0.csv
+log Completed Angle 0 sequence
 
 # Angle 45
-LOG Starting Angle 45 sequence
+log Starting Angle 45 sequence
 motor move 45
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Open_45.csv
+wait 2000
+spectrometer SAVE_SNAPSHOT Open_45.csv
 filter position 1 # Opaque
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Opaque_45.csv
-LOG Completed Angle 45 sequence
+wait 2000
+spectrometer SAVE_SNAPSHOT Opaque_45.csv
+log Completed Angle 45 sequence
 
 # Angle 90
-LOG Starting Angle 90 sequence
+log Starting Angle 90 sequence
 motor move 90
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Opaque_90.csv
+wait 2000
+spectrometer SAVE_SNAPSHOT Opaque_90.csv
 filter position 2 # Open
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Open_90.csv
-LOG Completed Angle 90 sequence
+wait 2000
+spectrometer SAVE_SNAPSHOT Open_90.csv
+log Completed Angle 90 sequence
 
 # Angle 135
-LOG Starting Angle 135 sequence
+log Starting Angle 135 sequence
 motor move 135
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Open_135.csv
+wait 2000
+spectrometer SAVE_SNAPSHOT Open_135.csv
 filter position 1 # Opaque
-WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Opaque_135.csv
-LOG Completed Angle 135 sequence
+wait 2000
+spectrometer SAVE_SNAPSHOT Opaque_135.csv
+log Completed Angle 135 sequence
+
+# Capture camera feed image before finishing
+camera SAVE_IMAGE OO_<Timestamp>.jpg
+log Saved camera image OO_<Timestamp>.jpg
 
 # End of routine - Optionally return to a known state
-LOG Routine OO.txt finished. Returning to initial position.
+log Routine OO.txt finished. Returning to initial position.
 motor move 0
-WAIT 2000
+wait 2000
 filter position 1 # Opaque
-LOG System returned to Opaque at 0 degrees.
+log System returned to Opaque at 0 degrees.

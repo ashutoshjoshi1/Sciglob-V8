@@ -1,4 +1,5 @@
 import cv2
+import os
 from PyQt5.QtCore import QObject, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -92,3 +93,39 @@ class CameraManager(QObject):
         if hasattr(self, 'camera') and self.camera is not None:
             self.camera.release()
             self.camera = None
+
+    def save_image(self, full_path_filename):
+        if not hasattr(self, 'camera') or self.camera is None or not self.camera.isOpened():
+            print("Camera not initialized or not open. Cannot save image.")
+            # Optionally, emit a signal or use main_window.statusBar() if accessible and appropriate
+            if hasattr(self.main_window, 'statusBar'):
+                self.main_window.statusBar().showMessage("Error: Camera not available to save image.")
+            return False
+
+        ret, frame = self.camera.read()
+        if not ret or frame is None:
+            print("Failed to capture frame from camera. Cannot save image.")
+            if hasattr(self.main_window, 'statusBar'):
+                self.main_window.statusBar().showMessage("Error: Failed to capture frame for saving.")
+            return False
+
+        try:
+            # Ensure the directory for the file exists
+            directory = os.path.dirname(full_path_filename)
+            if directory and not os.path.exists(directory): # Check if directory string is not empty
+                os.makedirs(directory, exist_ok=True)
+                print(f"Created directory: {directory}")
+                if hasattr(self.main_window, 'statusBar'):
+                    self.main_window.statusBar().showMessage(f"Info: Created directory {directory}")
+
+
+            cv2.imwrite(full_path_filename, frame)
+            print(f"Camera image saved successfully to {full_path_filename}")
+            if hasattr(self.main_window, 'statusBar'):
+                self.main_window.statusBar().showMessage(f"Success: Image saved to {full_path_filename}")
+            return True
+        except Exception as e:
+            print(f"Error saving camera image to {full_path_filename}: {e}")
+            if hasattr(self.main_window, 'statusBar'):
+                self.main_window.statusBar().showMessage(f"Error: Could not save image: {e}")
+            return False
