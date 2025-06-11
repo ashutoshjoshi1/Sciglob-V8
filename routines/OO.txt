@@ -2,51 +2,51 @@
 
 # Initial state: Assuming motor is at 0 degrees and filter is Opaque (Position 1)
 # If not, these commands might be needed at the start:
-# MOTOR MOVE_ABS 0
-# FILTER SET_POS 1
+# motor move 0
+# filter position 1
 # WAIT 2000 # Wait for initial positioning
 
 # Angle 0
 LOG Starting Angle 0 sequence
 SPECTROMETER SAVE_SNAPSHOT Opaque_0.csv
-FILTER SET_POS 2 # Open
+filter position 2 # Open
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Open_0.csv
 LOG Completed Angle 0 sequence
 
 # Angle 45
 LOG Starting Angle 45 sequence
-MOTOR MOVE_ABS 45
+motor move 45
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Open_45.csv
-FILTER SET_POS 1 # Opaque
+filter position 1 # Opaque
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Opaque_45.csv
 LOG Completed Angle 45 sequence
 
 # Angle 90
 LOG Starting Angle 90 sequence
-MOTOR MOVE_ABS 90
+motor move 90
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Open_90.csv
-FILTER SET_POS 1 # Opaque
+filter position 1 # Opaque
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Opaque_90.csv
 LOG Completed Angle 90 sequence
 
 # Angle 135
 LOG Starting Angle 135 sequence
-MOTOR MOVE_ABS 135
+motor move 135
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Open_135.csv
-FILTER SET_POS 1 # Opaque
+filter position 1 # Opaque
 WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Opaque_135.csv
 LOG Completed Angle 135 sequence
 
 # End of routine - Optionally return to a known state
 LOG Routine OO.txt finished. Returning to initial position.
-MOTOR MOVE_ABS 0
+motor move 0
 WAIT 2000
-FILTER SET_POS 1 # Opaque
+filter position 1 # Opaque
 LOG System returned to Opaque at 0 degrees.
