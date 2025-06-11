@@ -114,19 +114,13 @@ class SpectrometerController(QObject):
         
         # Only show Pixel vs Count plot for better performance
         self.plot_px = pg.PlotWidget()
-        # Set fixed range for x-axis (0-2048 pixels)
-        self.plot_px.setXRange(0, 2048)
-        self.plot_px.setLabel('bottom', 'Pixel', '')
+        self.plot_px.setLabel('bottom', 'Wavelength (nm)', '')
         self.plot_px.setLabel('left', 'Count', '')
-        # Enable auto-range only for y-axis
-        self.plot_px.getViewBox().enableAutoRange(ViewBox.YAxis, True)
-        self.plot_px.getViewBox().setAutoVisible(y=True)
-        self.plot_px.showGrid(x=True, y=True, alpha=0.3)
-
-        # Configure x-axis ticks to show 0, 100, 200, etc.
-        x_axis = self.plot_px.getAxis('bottom')
-        x_ticks = [(i, str(i)) for i in range(0, 2049, 100)]
-        x_axis.setTicks([x_ticks])
+        # Disable X-axis auto-ranging, enable Y-axis auto-ranging
+        self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.XAxis, enable=False)
+        self.plot_px.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+        self.plot_px.getViewBox().setAutoVisible(x=False, y=True)
+        self.plot_px.showGrid(x=False, y=False, alpha=0.3)
 
         # Add a more attractive style with optimized rendering
         self.curve_px = self.plot_px.plot([], [], pen=pg.mkPen('#f44336', width=2),
@@ -233,6 +227,10 @@ class SpectrometerController(QObject):
         self.start_btn.setEnabled(True)
         self.apply_btn.setEnabled(False) # Apply settings should be enabled only when measuring
         self.status_signal.emit(f"Spectrometer ready (SN={serial_str})")
+
+        if self.wls:
+            self.plot_px.setXRange(min(self.wls), max(self.wls), padding=0)
+            self.plot_px.getViewBox().enableAutoRange(pg.ViewBox.XAxis, False)
 
     def disconnect_main_spectrometer(self):
         """Disconnects the primary spectrometer (self.handle)."""
@@ -354,18 +352,18 @@ class SpectrometerController(QObject):
             # Get the data arrays - use numpy for better performance
             intensities = np.array(self.intens)
             
-            # Create pixel indices array
-            pixel_indices = np.arange(len(intensities))
+            # Get wavelengths
+            wavelengths = np.array(self.wls[:len(intensities)])
             
             # Apply downsampling to reduce points plotted if needed
             if hasattr(self, 'downsample_factor') and self.downsample_factor > 1:
                 step = self.downsample_factor
                 # Use numpy indexing for consistent slicing
                 intensities = intensities[::step]
-                pixel_indices = pixel_indices[::step]
+                wavelengths = wavelengths[::step]
             
             # Update pixel plot - this is now the only plot we maintain
-            self.curve_px.setData(pixel_indices, intensities)
+            self.curve_px.setData(wavelengths, intensities)
             
             # Auto-adjust y-axis range less frequently for better performance
             if not hasattr(self, '_range_update_counter'):
@@ -416,10 +414,11 @@ class SpectrometerController(QObject):
         path = os.path.join(self.csv_dir, f"snapshot_{ts}.csv")
         try:
             with open(path, 'w') as f:
-                f.write("Pixel,Intensity\n")
-                for i, inten in enumerate(self.intens):
-                    if inten != 0:
-                        f.write(f"{i},{inten:.4f}\n")
+                f.write("Wavelength (nm),Intensity\n")
+                num_points = min(len(self.wls), len(self.intens))
+                for i in range(num_points):
+                    if self.intens[i] != 0: # Optional: keep filtering out zero intensity
+                        f.write(f"{self.wls[i]:.2f},{self.intens[i]:.4f}\n")
             self.status_signal.emit(f"Saved snapshot to {path}")
         except Exception as e:
             self.status_signal.emit(f"Save error: {e}")

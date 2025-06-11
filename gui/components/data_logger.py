@@ -99,9 +99,17 @@ class DataLogger(QObject):
             "THPHum_pct", "THPPres_hPa", "Spec_temp_C", "RoutineCode"
         ]
         
-        # Add pixel headers if spectrometer data is available
-        if hasattr(self.main_window, 'spec_ctrl') and hasattr(self.main_window.spec_ctrl, 'intens'):
-            headers += [f"Pixel_{i}" for i in range(len(self.main_window.spec_ctrl.intens))]
+        # Add wavelength or pixel headers if spectrometer data is available
+        if hasattr(self.main_window, 'spec_ctrl') and self.main_window.spec_ctrl:
+            spec_ctrl = self.main_window.spec_ctrl
+            if hasattr(spec_ctrl, 'wls') and spec_ctrl.wls and \
+               hasattr(spec_ctrl, 'intens') and len(spec_ctrl.intens) > 0:
+                # Use wavelengths if available
+                num_points = len(spec_ctrl.intens) # Match number of intensity points
+                headers += [f"Wavelength_{w:.2f}nm" for w in spec_ctrl.wls[:num_points]]
+            elif hasattr(spec_ctrl, 'intens') and len(spec_ctrl.intens) > 0:
+                # Fallback to pixel-based headers
+                headers += [f"Pixel_{i}" for i in range(len(spec_ctrl.intens))]
             
         return headers
     
