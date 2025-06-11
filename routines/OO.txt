@@ -2,9 +2,9 @@
 
 # Initial state: Assuming motor is at 0 degrees and filter is Opaque (Position 1)
 # If not, these commands might be needed at the start:
-# motor move 0
-# filter position 1
-# WAIT 2000 # Wait for initial positioning
+motor move 0
+filter position 1
+WAIT 2000 # Wait for initial positioning
 
 # Angle 0
 LOG Starting Angle 0 sequence
@@ -28,10 +28,10 @@ LOG Completed Angle 45 sequence
 LOG Starting Angle 90 sequence
 motor move 90
 WAIT 2000
-SPECTROMETER SAVE_SNAPSHOT Open_90.csv
-filter position 1 # Opaque
-WAIT 2000
 SPECTROMETER SAVE_SNAPSHOT Opaque_90.csv
+filter position 2 # Open
+WAIT 2000
+SPECTROMETER SAVE_SNAPSHOT Open_90.csv
 LOG Completed Angle 90 sequence
 
 # Angle 135
